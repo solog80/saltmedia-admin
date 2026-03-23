@@ -1,0 +1,103 @@
+[debug] [2025-09-19T12:20:18.663Z] ----------------------------------------------------------------------
+[debug] [2025-09-19T12:20:18.664Z] Command:       /usr/local/bin/node /usr/local/bin/firebase init
+[debug] [2025-09-19T12:20:18.665Z] CLI Version:   14.16.0
+[debug] [2025-09-19T12:20:18.665Z] Platform:      darwin
+[debug] [2025-09-19T12:20:18.665Z] Node Version:  v22.17.0
+[debug] [2025-09-19T12:20:18.665Z] Time:          Fri Sep 19 2025 15:20:18 GMT+0300 (East Africa Time)
+[debug] [2025-09-19T12:20:18.665Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-09-19T12:20:18.667Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-19T12:20:18.667Z] > authorizing via signed-in user (solog80@gmail.com)
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  /Users/solomacbookair/Documents/myApps/saltmedia-admin-app
+
+[debug] [2025-09-19T12:25:17.434Z] ----------------------------------------------------------------------
+[debug] [2025-09-19T12:25:17.435Z] Command:       /usr/local/bin/node /usr/local/bin/firebase init
+[debug] [2025-09-19T12:25:17.435Z] CLI Version:   14.16.0
+[debug] [2025-09-19T12:25:17.435Z] Platform:      darwin
+[debug] [2025-09-19T12:25:17.435Z] Node Version:  v22.17.0
+[debug] [2025-09-19T12:25:17.435Z] Time:          Fri Sep 19 2025 15:25:17 GMT+0300 (East Africa Time)
+[debug] [2025-09-19T12:25:17.435Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-09-19T12:25:17.504Z] Object "" in "firebase.json" has unknown property: {"additionalProperty":"flutter"}
+[debug] [2025-09-19T12:25:17.505Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-19T12:25:17.506Z] > authorizing via signed-in user (solog80@gmail.com)
+[debug] [2025-09-19T12:25:17.506Z] Object "" in "firebase.json" has unknown property: {"additionalProperty":"flutter"}
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  /Users/solomacbookair/Documents/myApps/saltmedia-admin-app
+
+Before we get started, keep in mind:
+
+  * You are initializing within an existing Firebase project directory
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] but for now we'll just set up a default project.
+[info] 
+[debug] [2025-09-19T12:25:36.398Z] Checked if tokens are valid: true, expires at: 1758288273670
+[debug] [2025-09-19T12:25:36.398Z] Checked if tokens are valid: true, expires at: 1758288273670
+[debug] [2025-09-19T12:25:36.399Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects pageSize=100
+[debug] [2025-09-19T12:25:54.712Z] *** [apiv2] error from fetch(https://firebase.googleapis.com/v1beta1/projects?pageSize=100, {"headers":{},"method":"GET","signal":{}}): FetchError: request to https://firebase.googleapis.com/v1beta1/projects?pageSize=100 failed, reason: 
+[debug] [2025-09-19T12:25:54.713Z] Failed to make request to https://firebase.googleapis.com/v1beta1/projects?pageSize=100
+[debug] [2025-09-19T12:25:54.735Z] FirebaseError: Failed to make request to https://firebase.googleapis.com/v1beta1/projects?pageSize=100
+    at RetryOperation._fn (/usr/local/lib/node_modules/firebase-tools/lib/apiv2.js:261:31)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[error] 
+[error] Error: Failed to list Firebase projects. See firebase-debug.log for more info.
+[debug] [2025-09-19T12:26:22.226Z] ----------------------------------------------------------------------
+[debug] [2025-09-19T12:26:22.228Z] Command:       /usr/local/bin/node /usr/local/bin/firebase init
+[debug] [2025-09-19T12:26:22.228Z] CLI Version:   14.16.0
+[debug] [2025-09-19T12:26:22.228Z] Platform:      darwin
+[debug] [2025-09-19T12:26:22.228Z] Node Version:  v22.17.0
+[debug] [2025-09-19T12:26:22.228Z] Time:          Fri Sep 19 2025 15:26:22 GMT+0300 (East Africa Time)
+[debug] [2025-09-19T12:26:22.228Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-09-19T12:26:22.230Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-19T12:26:22.230Z] > authorizing via signed-in user (solog80@gmail.com)
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  /Users/solomacbookair/Documents/myApps/saltmedia-admin-app
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] but for now we'll just set up a default project.
+[info] 
+[debug] [2025-09-19T12:26:28.565Z] Checked if tokens are valid: true, expires at: 1758288273670
+[debug] [2025-09-19T12:26:28.565Z] Checked if tokens are valid: true, expires at: 1758288273670
+[debug] [2025-09-19T12:26:28.566Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects pageSize=100
+[debug] [2025-09-19T12:26:58.568Z] *** [apiv2] error from fetch(https://firebase.googleapis.com/v1beta1/projects?pageSize=100, {"headers":{},"method":"GET","signal":{}}): AbortError: The user aborted a request.
+[debug] [2025-09-19T12:26:58.569Z] Timeout reached making request to https://firebase.googleapis.com/v1beta1/projects?pageSize=100
+[debug] [2025-09-19T12:27:00.539Z] FirebaseError: Timeout reached making request to https://firebase.googleapis.com/v1beta1/projects?pageSize=100
+    at RetryOperation._fn (/usr/local/lib/node_modules/firebase-tools/lib/apiv2.js:257:35)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[error] 
+[error] Error: Failed to list Firebase projects. See firebase-debug.log for more info.
