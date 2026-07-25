@@ -1,9 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
-import {
-  Card, CardActionArea, CardContent, CardMedia, Typography, Button
-} from '@mui/material';
+import { Button } from '@/components/ui/button';
 
 interface OnDemandCardProps {
   image: string;
@@ -14,34 +11,30 @@ interface OnDemandCardProps {
 
 const OnDemandCard: React.FC<OnDemandCardProps> = ({ image, title, description, link }) => {
   return (
-    <Card sx={{ maxWidth: 345, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <CardActionArea component={Link} href={link} style={{ flexGrow: 1 }}>
-        <CardMedia
-          component="img"
-          height="140"
-          image={image}
+    <div className="frosted-glass overflow-hidden flex flex-col h-full group">
+      <Link href={link} className="block relative aspect-video overflow-hidden">
+        <img
+          src={image}
           alt={title}
-          sx={{ objectFit: 'cover' }}
+          className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105"
         />
-        <CardContent>
-          <Typography gutterBottom variant="h5" component="div">
-            {title}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {description}
-          </Typography>
-        </CardContent>
-      </CardActionArea>
-      <Button
-        component={Link}
-        href={link}
-        variant="contained"
-        color="primary"
-        sx={{ margin: 2, alignSelf: 'flex-start' }}
-      >
-        Watch Now
-      </Button>
-    </Card>
+      </Link>
+      <div className="p-4 pb-2">
+        <h3 className="text-lg line-clamp-1 text-white font-semibold">{title}</h3>
+      </div>
+      <div className="p-4 pt-0 flex-grow">
+        <p className="text-sm text-white/70 line-clamp-2">
+          {description}
+        </p>
+      </div>
+      <div className="p-4 pt-0">
+        <Link href={link} className="block">
+          <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+            Watch Now
+          </Button>
+        </Link>
+      </div>
+    </div>
   );
 };
 

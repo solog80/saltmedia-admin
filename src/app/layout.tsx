@@ -28,12 +28,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-serif", notoSerif.variable)}>
+    <html lang="en" className={cn("dark font-serif", notoSerif.variable)}>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased flex`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased flex bg-black`}
+        style={{
+          backgroundImage: "url('/Dolmites.jpg')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed',
+          minHeight: '100vh',
+        }}
       >
+        <div className="absolute inset-0 bg-black/40 pointer-events-none" />
         <Sidebar />
-        <div className="flex-1">
+        <div className="flex-1 relative z-10">
           <Providers>{children}</Providers>
         </div>
       </body>

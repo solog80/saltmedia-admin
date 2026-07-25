@@ -4,13 +4,39 @@ import React, { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 
 interface User {
   id: string;
   email: string;
   role: string;
-  name?: string; // Make name optional as it might not always be present
-  // Add other user properties as needed
+  name?: string;
 }
 
 interface GetUsersPaginatedResponse {
@@ -47,19 +73,19 @@ const UserManagementPage = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState('viewer'); // Default role
+  const [newRole, setNewRole] = useState('viewer');
 
   const [searchTerm, setSearchTerm] = useState('');
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error } = useInfiniteQuery<GetUsersPaginatedResponse, Error>({
-    queryKey: ['users', searchTerm], // Include searchTerm in queryKey
+    queryKey: ['users', searchTerm],
     queryFn: async ({ pageParam }) => {
-      const result = await getUsersPaginated({ lastVisibleId: pageParam, searchTerm });
+      const result = await getUsersPaginated({ lastVisibleId: pageParam as string | undefined, searchTerm });
       return result.data;
     },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextPageToken,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
   const updateUserRoleMutation = useMutation<{
@@ -70,7 +96,7 @@ const UserManagementPage = () => {
       return result.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', searchTerm] }); // Invalidate with searchTerm
+      queryClient.invalidateQueries({ queryKey: ['users', searchTerm] });
       setIsEditModalOpen(false);
       setEditingUser(null);
       setSelectedRole('');
@@ -89,7 +115,7 @@ const UserManagementPage = () => {
       return result.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', searchTerm] }); // Invalidate with searchTerm
+      queryClient.invalidateQueries({ queryKey: ['users', searchTerm] });
       setIsCreateModalOpen(false);
       setNewEmail('');
       setNewPassword('');
@@ -117,175 +143,181 @@ const UserManagementPage = () => {
     createUserMutation.mutate({ email: newEmail, password: newPassword, role: newRole });
   };
 
-  if (isLoading) return <div>Loading users...</div>;
-  if (isError) return <div>Error: {error?.message}</div>;
-
-  console.log("React Query Data:", data);
+  if (isLoading) return <div className="p-8 text-center text-white">Loading users...</div>;
+  if (isError) return <div className="p-8 text-center text-red-300">Error: {error?.message}</div>;
 
   const allUsers = data?.pages.flatMap((page) => page.users) || [];
 
-  console.log("All Users for rendering:", allUsers);
-
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">User Management</h1>
-
-      <div className="flex justify-between items-center mb-4">
-        <button
+    <div className="p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-white">User Management</h1>
+          <p className="mt-2 text-white/70">Manage user roles and permissions</p>
+        </div>
+        <Button
           onClick={() => setIsCreateModalOpen(true)}
-          className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+          className="bg-blue-600 hover:bg-blue-700 text-white"
         >
           Create New User
-        </button>
-        <input
-          type="text"
-          placeholder="Search by name..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="max-w-xs block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-        />
+        </Button>
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {allUsers.map((user) => (
-              <tr key={user.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.email}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.name || 'N/A'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.role || 'N/A'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button onClick={() => handleEditClick(user)} className="text-indigo-600 hover:text-indigo-900">Edit</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <div className="frosted-glass">
+        <div className="p-6 border-b border-white/20">
+          <h2 className="text-lg font-semibold text-white mb-4">Users</h2>
+          <div className="flex items-center space-x-2">
+            <Input
+              placeholder="Search by name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-xs bg-white/10 border-white/20 text-white placeholder-white/40"
+            />
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="rounded-md border border-white/20">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-white/20">
+                  <TableHead className="text-white/80">Email</TableHead>
+                  <TableHead className="text-white/80">Name</TableHead>
+                  <TableHead className="text-white/80">Role</TableHead>
+                  <TableHead className="text-right text-white/80">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {allUsers.length > 0 ? (
+                  allUsers.map((user) => (
+                    <TableRow key={user.id} className="border-white/20 hover:bg-white/5">
+                      <TableCell className="font-medium text-white">{user.email}</TableCell>
+                      <TableCell className="text-white/80">{user.name || 'N/A'}</TableCell>
+                      <TableCell className="capitalize text-white/80">{user.role || 'N/A'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditClick(user)}
+                          className="text-blue-300 hover:text-blue-200 hover:bg-white/10"
+                        >
+                          Edit
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow className="border-white/20">
+                    <TableCell colSpan={4} className="h-24 text-center text-white/50">
+                      No results.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
-      <div className="mt-4 flex justify-center">
-        <button
-          onClick={() => fetchNextPage()}
-          disabled={!hasNextPage || isFetchingNextPage}
-          className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-        >
-          {isFetchingNextPage
-            ? 'Loading more...'
-            : hasNextPage
-            ? 'Load More'
-            : 'Nothing more to load'}
-        </button>
+          {hasNextPage && (
+            <div className="mt-6 flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="border-white/20 text-white hover:bg-white/10"
+              >
+                {isFetchingNextPage ? 'Loading more...' : 'Load More'}
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Edit User Modal */}
-      {isEditModalOpen && editingUser && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex justify-center items-center">
-          <div className="bg-white p-5 rounded-lg shadow-xl">
-            <h2 className="text-xl font-bold mb-4">Edit Role for {editingUser.email}</h2>
-            <div className="mb-4">
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700">Role</label>
-              <select
-                id="role"
-                name="role"
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-              >
-                <option value="admin">Admin</option>
-                <option value="editor">Editor</option>
-                <option value="viewer">Viewer</option>
-              </select>
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User Role</DialogTitle>
+            <DialogDescription>
+              Update the role for {editingUser?.email}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="role">Role</Label>
+              <Select value={selectedRole} onValueChange={setSelectedRole}>
+                <SelectTrigger id="role">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="editor">Editor</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveRole}
-                disabled={updateUserRoleMutation.isPending}
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {updateUserRoleMutation.isPending ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-            {updateUserRoleMutation.isError && (
-              <p className="text-red-500 text-sm mt-2">Error: {updateUserRoleMutation.error?.message}</p>
-            )}
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveRole} disabled={updateUserRoleMutation.isPending}>
+              {updateUserRoleMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create User Modal */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex justify-center items-center">
-          <div className="bg-white p-5 rounded-lg shadow-xl">
-            <h2 className="text-xl font-bold mb-4">Create New User</h2>
-            <div className="mb-4">
-              <label htmlFor="newEmail" className="block text-sm font-medium text-gray-700">Email</label>
-              <input
-                type="email"
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New User</DialogTitle>
+            <DialogDescription>
+              Add a new user to the platform.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="newEmail">Email</Label>
+              <Input
                 id="newEmail"
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                type="email"
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
               />
             </div>
-            <div className="mb-4">
-              <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700">Password</label>
-              <input
-                type="password"
+            <div className="grid gap-2">
+              <Label htmlFor="newPassword">Password</Label>
+              <Input
                 id="newPassword"
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
             </div>
-            <div className="mb-4">
-              <label htmlFor="newRole" className="block text-sm font-medium text-gray-700">Role</label>
-              <select
-                id="newRole"
-                name="newRole"
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value)}
-              >
-                <option value="admin">Admin</option>
-                <option value="editor">Editor</option>
-                <option value="viewer">Viewer</option>
-              </select>
+            <div className="grid gap-2">
+              <Label htmlFor="newRole">Role</Label>
+              <Select value={newRole} onValueChange={setNewRole}>
+                <SelectTrigger id="newRole">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="editor">Editor</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateUser}
-                disabled={createUserMutation.isPending}
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
-              >
-                {createUserMutation.isPending ? 'Creating...' : 'Create'}
-              </button>
-            </div>
-            {createUserMutation.isError && (
-              <p className="text-red-500 text-sm mt-2">Error: {createUserMutation.error?.message}</p>
-            )}
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateUser} disabled={createUserMutation.isPending}>
+              {createUserMutation.isPending ? 'Creating...' : 'Create User'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

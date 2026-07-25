@@ -1,35 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '../../../lib/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import admin from 'firebase-admin';
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
-
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-
-    if (!user) {
-      return NextResponse.json({ message: 'Authentication failed.' }, { status: 401 });
+    const { idToken } = await req.json();
+    if (!idToken) {
+      console.log('API login: No token provided');
+      return NextResponse.json({ message: 'No token provided' }, { status: 400 });
     }
 
-    const idTokenResult = await user.getIdTokenResult();
-    const role = idTokenResult.claims.role;
+    console.log('API login: Verifying ID token...');
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    console.log('API login: Token verified, uid:', decoded.uid, 'role:', decoded.role);
 
-    if (role === 'admin') {
-      const response = NextResponse.json({ message: 'Login successful', role: 'admin' });
-      response.cookies.set('firebaseToken', idTokenResult.token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 60 * 60 * 24, // 1 day
-        path: '/',
-      });
-      return response;
-    } else {
-      return NextResponse.json({ message: 'Unauthorized', role: role }, { status: 403 });
+    const role = decoded.role;
+
+    if (role !== 'admin' && role !== 'moderator') {
+      console.log('API login: Unauthorized role:', role);
+      return NextResponse.json({ message: 'Unauthorized - user role is not admin or moderator', role: role || 'none' }, { status: 403 });
     }
+
+    const response = NextResponse.json({ message: 'Login successful', role: 'admin' });
+    response.cookies.set('firebaseToken', idToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24,
+      path: '/',
+    });
+    console.log('API login: Cookie set, returning success');
+    return response;
   } catch (error: any) {
-    console.error('Login error:', error);
-    return NextResponse.json({ message: error.message }, { status: 500 });
+    console.error('API login error:', error.message, error.stack);
+    return NextResponse.json({ message: 'Server error: ' + error.message }, { status: 500 });
   }
 }
