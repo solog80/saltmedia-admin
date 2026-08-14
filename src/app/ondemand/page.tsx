@@ -85,6 +85,10 @@ function OndemandContent() {
   // Bundle CDN collection videos
   const [selectedVideoFromBunny, setSelectedVideoFromBunny] = useState<string | null>(null);
 
+  // Upload server selection (Bunny CDN or SFX)
+  const [uploadServer, setUploadServer] = useState<'bunny' | 'sfx'>('bunny');
+  const [sfxStatusText, setSfxStatusText] = useState<string | null>(null);
+
   const { data, isLoading, error } = useQuery<{ documents: OnDemandContent[] }>({
     queryKey: ['onDemandData', selectedFilter],
     queryFn: fetchOnDemandData,
@@ -162,6 +166,17 @@ function OndemandContent() {
     setIsUploading(true);
     setUploadProgress(0);
 
+    if (uploadServer === 'sfx') {
+      if (!videoFile) {
+        alert('Please select a video file to upload to the SFX server.');
+        setIsUploading(false);
+        setUploadProgress(0);
+        return;
+      }
+      startSfxUpload();
+      return;
+    }
+
     try {
       let videoId = selectedVideoFromBunny;
 
@@ -220,6 +235,137 @@ function OndemandContent() {
       setIsUploading(false);
       setUploadProgress(0);
     }
+  };
+
+  const startSfxUpload = () => {
+    if (!videoFile) return;
+
+    const jobName = videoFile.name.replace(/\.[^.]+$/, '');
+
+    const upload = new tus.Upload(videoFile, {
+      endpoint: 'https://upload.solofx.net/files',
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      chunkSize: 50 * 1024 * 1024,
+      metadata: {
+        filename: videoFile.name,
+        codec: 'av1',
+      },
+      storeFingerprintForResuming: true,
+      onError: function (error) {
+        console.error('SFX upload failed:', error);
+        alert('SFX upload failed: ' + error);
+        setIsUploading(false);
+        setUploadProgress(0);
+        setSfxStatusText(null);
+      },
+      onProgress: function (bytesUploaded, bytesTotal) {
+        const percentage = (bytesUploaded / bytesTotal * 100).toFixed(1);
+        setUploadProgress(parseFloat(percentage));
+      },
+      onSuccess: async function () {
+        pollSfxJob(jobName);
+      }
+    });
+
+    upload.start();
+  };
+
+  const pollSfxJob = async (jobName: string) => {
+    setSfxStatusText(`Transcoding started (${jobName})...`);
+    let attempts = 0;
+    while (attempts < 600) {
+      await new Promise(r => setTimeout(r, 3000));
+      attempts++;
+      try {
+        const res = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(jobName)}`);
+        if (!res.ok) continue;
+        const job = await res.json();
+        const status = job.status || '';
+        const stage = job.stage || 'encoding';
+        const stagePct = typeof job.stagePct === 'number' ? job.stagePct : 0;
+
+        setSfxStatusText(
+          `Transcoding on SFX (${stage}${job.current ? ' — ' + job.current : ''}${job.eta ? ' — ETA ' + job.eta : ''})...`
+        );
+        if (stagePct > 0) setUploadProgress(stagePct);
+
+        if (status === 'done') {
+          let duration = 0;
+          let thumbnail = '';
+          try {
+            const durRes = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(jobName)}&kind=duration`);
+            if (durRes.ok) {
+              const dur = await durRes.json();
+              duration = typeof dur.duration === 'number' ? dur.duration : 0;
+            }
+          } catch (err) {
+            console.error('SFX duration fetch error:', err);
+          }
+          try {
+            const vRes = await fetch(`/api/sfx/jobs?kind=videos`);
+            if (vRes.ok) {
+              const videos = await vRes.json();
+              const video = (Array.isArray(videos) ? videos : []).find((v: any) => v.name === jobName);
+              thumbnail = video?.thumbUrl || '';
+            }
+          } catch (err) {
+            console.error('SFX thumbnail fetch error:', err);
+          }
+          await createSfxEpisode(jobName, job.hlsUrl || '', duration, thumbnail);
+          return;
+        }
+        if (status === 'failed') {
+          alert(`SFX transcoding failed for job "${jobName}".`);
+          setIsUploading(false);
+          setUploadProgress(0);
+          setSfxStatusText(null);
+          return;
+        }
+      } catch (err) {
+        console.error('SFX job polling error:', err);
+      }
+    }
+    alert('Timed out waiting for SFX transcode to complete. Check the SFX admin for job status.');
+    setIsUploading(false);
+    setUploadProgress(0);
+    setSfxStatusText(null);
+  };
+
+  const createSfxEpisode = async (jobName: string, hlsUrl: string, duration: number, thumbnail: string) => {
+    try {
+      const createSfxEpisodeCallable = httpsCallable(functionsEu, 'createSfxEpisode');
+      const episodePayload: Record<string, unknown> = {
+        showId: selectedCollectionId,
+        videoUrl: hlsUrl,
+        sfxJobName: jobName,
+        title: videoTitle,
+        description: videoDescription,
+        duration,
+        thumbnail,
+      };
+      if (newSeasonMode && newSeasonTitle) {
+        episodePayload.seasonTitle = newSeasonTitle;
+      } else if (selectedSeasonId) {
+        episodePayload.seasonId = selectedSeasonId;
+      }
+      await createSfxEpisodeCallable(episodePayload);
+    } catch (episodeError) {
+      console.error('Failed to create SFX episode record:', episodeError);
+    }
+    alert('Video uploaded and added successfully!');
+    setIsUploading(false);
+    setUploadProgress(0);
+    setSfxStatusText(null);
+    setVideoFile(null);
+    setSelectedVideoFromBunny(null);
+    setVideoTitle('');
+    setVideoDescription('');
+    setNewSeasonMode(false);
+    setNewSeasonTitle('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
   };
 
   const createEpisode = async (videoId: string) => {
@@ -380,6 +526,30 @@ function OndemandContent() {
         </div>
 
         <div className="space-y-5">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-white/80">Upload Server</Label>
+            <Select
+              value={uploadServer}
+              onValueChange={(v) => {
+                setUploadServer(v as 'bunny' | 'sfx');
+                setSelectedVideoFromBunny(null);
+              }}
+            >
+              <SelectTrigger className="bg-white/5 border-white/10 text-white h-10">
+                <SelectValue placeholder="Select a server" />
+              </SelectTrigger>
+              <SelectContent className="bg-gray-900 border-white/10">
+                <SelectItem value="bunny" className="text-white">Bunny CDN</SelectItem>
+                <SelectItem value="sfx" className="text-white">SFX Server (solofx.net)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-white/40">
+              {uploadServer === 'sfx'
+                ? 'Uploads to upload.solofx.net and transcodes to AV1.'
+                : 'Uploads to the Bunny CDN video library.'}
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-sm font-medium text-white/80">Show</Label>
@@ -432,7 +602,7 @@ function OndemandContent() {
                 </div>
               </div>
             )}
-            {selectedCollectionId && selectedShow?.bunnyGuid && !videoFile && (
+            {selectedCollectionId && selectedShow?.bunnyGuid && !videoFile && uploadServer === 'bunny' && (
               <div className="space-y-2 col-span-full">
                 <Label className="text-sm font-medium text-white/80">Or select from existing videos</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-2 rounded-lg bg-white/5 border border-white/10">
@@ -545,7 +715,11 @@ function OndemandContent() {
           {isUploading && (
             <div className="space-y-2">
               <div className="flex justify-between text-xs text-white/60">
-                <span>Uploading to Bunny CDN...</span>
+                <span>
+                  {uploadServer === 'sfx' && sfxStatusText
+                    ? sfxStatusText
+                    : `Uploading to ${uploadServer === 'sfx' ? 'SFX Server' : 'Bunny CDN'}...`}
+                </span>
                 <span className="font-mono">{uploadProgress}%</span>
               </div>
               <div className="h-2 bg-white/10 rounded-full overflow-hidden">

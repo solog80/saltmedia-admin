@@ -63,13 +63,16 @@ function HlsPlayer({ src, onClose }: { src: string; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
+  const isSfx = src.includes('objects.solofx.net');
+
   useEffect(() => {
+    if (isSfx) return;
     let hls: any = null;
 
     const loadVideo = async () => {
       if (!videoRef.current) return;
 
-      if (src.endsWith('.m3u8')) {
+      if (src.split('?')[0].endsWith('.m3u8')) {
         const Hls = (await import('hls.js')).default;
         if (Hls.isSupported()) {
           hls = new Hls();
@@ -93,7 +96,11 @@ function HlsPlayer({ src, onClose }: { src: string; onClose: () => void }) {
     return () => {
       if (hls) hls.destroy();
     };
-  }, [src]);
+  }, [src, isSfx]);
+
+  const sfxEmbedUrl = isSfx
+    ? `https://player.solofx.net/?v=${encodeURIComponent(new URL(src).pathname)}&embed=1`
+    : '';
 
   return (
     <div
@@ -108,12 +115,22 @@ function HlsPlayer({ src, onClose }: { src: string; onClose: () => void }) {
         >
           <X className="w-5 h-5" />
         </button>
-        <video
-          ref={videoRef}
-          controls
-          className="w-full aspect-video object-contain bg-black"
-          playsInline
-        />
+        {isSfx ? (
+          <iframe
+            src={sfxEmbedUrl}
+            title="SFX player"
+            className="w-full aspect-video bg-black border-0"
+            allow="autoplay; encrypted-media; fullscreen"
+            allowFullScreen
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            controls
+            className="w-full aspect-video object-contain bg-black"
+            playsInline
+          />
+        )}
         <div className="p-4 text-white">
           <p className="text-sm text-white/70">Press close or click outside to exit</p>
         </div>
@@ -159,6 +176,10 @@ export default function ShowDetailPage() {
     } finally {
       setLoadingEpisodes(false);
     }
+  };
+
+  const handlePlayEpisode = (episode: Episode) => {
+    setPlayingEpisode(episode);
   };
 
   const handleDeleteSeason = async () => {
@@ -421,13 +442,14 @@ export default function ShowDetailPage() {
                         <div
                           key={episode.id}
                           className="rounded-lg overflow-hidden bg-white/5 border border-white/10 hover:border-blue-500/50 hover:bg-white/10 transition group cursor-pointer"
-                          onClick={() => setPlayingEpisode(episode)}
+                          onClick={() => handlePlayEpisode(episode)}
                         >
                           <div className="relative aspect-video bg-gray-800 overflow-hidden">
                             {episode.thumbnail && (
                               <img
                                 src={episode.thumbnail}
                                 alt={episode.title}
+                                referrerPolicy="no-referrer"
                                 className="w-full h-full object-cover group-hover:scale-105 transition"
                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                               />
@@ -436,7 +458,7 @@ export default function ShowDetailPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setPlayingEpisode(episode);
+                                  handlePlayEpisode(episode);
                                 }}
                                 className="bg-blue-600 hover:bg-blue-700 p-3 rounded-full opacity-0 group-hover:opacity-100 transition"
                               >
