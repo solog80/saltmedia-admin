@@ -44,6 +44,27 @@ const functions = getFunctions(app, 'us-central1');
 const functionsEu = getFunctions(app, 'europe-west1');
 const queryClient = new QueryClient();
 
+interface SfxVideo {
+  name: string;
+  status?: string;
+  hlsUrl?: string;
+  thumbUrl?: string;
+}
+
+interface SfxJob {
+  name: string;
+  status?: string;
+  stage?: string;
+  current?: string;
+  step?: number;
+  total?: number;
+  stagePct?: number;
+  eta?: string;
+  elapsed?: number;
+  bucket?: string;
+  hlsUrl?: string;
+}
+
 function OndemandContent() {
   const { user, role, loading } = useAuth();
   const isModerator = role === 'moderator';
@@ -88,6 +109,11 @@ function OndemandContent() {
   // Upload server selection (Bunny CDN or SFX)
   const [uploadServer, setUploadServer] = useState<'bunny' | 'sfx'>('bunny');
   const [sfxStatusText, setSfxStatusText] = useState<string | null>(null);
+  const [selectedSfxVideo, setSelectedSfxVideo] = useState<SfxVideo | null>(null);
+  const [sfxSearch, setSfxSearch] = useState('');
+  const [sfxTenant, setSfxTenant] = useState<'tv' | 'fm'>('tv');
+  const [newShowMode, setNewShowMode] = useState(false);
+  const [newShowTitle, setNewShowTitle] = useState('');
 
   const { data, isLoading, error } = useQuery<{ documents: OnDemandContent[] }>({
     queryKey: ['onDemandData', selectedFilter],
@@ -108,6 +134,44 @@ function OndemandContent() {
     },
     enabled: !!selectedShow?.bunnyGuid,
   });
+
+  const { data: sfxVideos, isLoading: loadingSfxVideos } = useQuery({
+    queryKey: ['sfx-videos', sfxTenant],
+    queryFn: async () => {
+      const tenantPath = sfxTenant === 'fm'
+        ? process.env.NEXT_PUBLIC_SFX_TENANT_FM_PATH || ''
+        : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '';
+      const res = await fetch(`/api/sfx/jobs?kind=videos`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (Array.isArray(data) ? data : [])
+        .filter((v: SfxVideo) => v.status === 'done')
+        .filter((v: SfxVideo) => !tenantPath || v.hlsUrl?.includes(tenantPath));
+    },
+    enabled: uploadServer === 'sfx' && !!selectedCollectionId,
+  });
+
+  const { data: sfxActiveJobs } = useQuery({
+    queryKey: ['sfx-active-jobs', sfxTenant],
+    queryFn: async () => {
+      const tenantPath = sfxTenant === 'fm'
+        ? process.env.NEXT_PUBLIC_SFX_TENANT_FM_PATH || ''
+        : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '';
+      const res = await fetch(`/api/sfx/jobs`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (Array.isArray(data) ? data : [])
+        .filter((j: SfxJob) => j.status === 'queued' || j.status === 'working')
+        .filter((j: SfxJob) => !tenantPath || !j.hlsUrl || j.hlsUrl.includes(tenantPath));
+    },
+    enabled: uploadServer === 'sfx',
+    refetchInterval: 3000,
+  });
+
+  const sfxJobDisplayName = (j: SfxJob) => {
+    const m = j.hlsUrl?.match(/\/hls\/(.+)\/index\.m3u8/);
+    return m ? decodeURIComponent(m[1]) : j.name;
+  };
 
   useEffect(() => {
     if (data?.documents && data.documents.length > 0 && !selectedCollectionId) {
@@ -149,12 +213,13 @@ function OndemandContent() {
     if (file) {
       setVideoFile(file);
       setSelectedVideoFromBunny(null);
+      setSelectedSfxVideo(null);
       setVideoTitle(file.name.split('.')[0]);
     }
   };
 
   const handleUpload = async () => {
-    if ((!videoFile && !selectedVideoFromBunny) || !selectedCollectionId || !videoTitle) {
+    if ((!videoFile && !selectedVideoFromBunny && !selectedSfxVideo) || !selectedCollectionId || !videoTitle) {
       alert('Please select a file (or existing video), a show, and provide a title.');
       return;
     }
@@ -167,6 +232,10 @@ function OndemandContent() {
     setUploadProgress(0);
 
     if (uploadServer === 'sfx') {
+      if (selectedSfxVideo) {
+        await createSfxEpisodeFromExisting(selectedSfxVideo);
+        return;
+      }
       if (!videoFile) {
         alert('Please select a video file to upload to the SFX server.');
         setIsUploading(false);
@@ -240,14 +309,36 @@ function OndemandContent() {
   const startSfxUpload = () => {
     if (!videoFile) return;
 
-    const jobName = videoFile.name.replace(/\.[^.]+$/, '');
+    const sanitizePathSegment = (s: string) =>
+      s.trim().replace(/[\\/:*?"<>|\s]+/g, '_') || 'Untitled';
+
+    // Build the SFX file path from the on-demand hierarchy (show/season/episode).
+    // Folders in the filename metadata become collections on the server.
+    const showTitle = sanitizePathSegment(selectedShow?.title || 'Show');
+    const seasonTitle = sanitizePathSegment(
+      newSeasonMode && newSeasonTitle
+        ? newSeasonTitle
+        : (seasons.find((s) => s.id === selectedSeasonId)?.title || 'Season')
+    );
+    const episodeTitle = sanitizePathSegment(
+      videoTitle || videoFile.name.replace(/\.[^.]+$/, '')
+    );
+    const ext = videoFile.name.includes('.')
+      ? '.' + videoFile.name.split('.').pop()
+      : '';
+
+    const uploadFilename = `${showTitle}/${seasonTitle}/${episodeTitle}${ext}`;
+    const jobName = uploadFilename.replace(/\.[^.]+$/, '');
 
     const upload = new tus.Upload(videoFile, {
       endpoint: 'https://upload.solofx.net/files',
       retryDelays: [0, 3000, 5000, 10000, 20000],
       chunkSize: 50 * 1024 * 1024,
       metadata: {
-        filename: videoFile.name,
+        filename: uploadFilename,
+        tenant: sfxTenant === 'fm'
+          ? process.env.NEXT_PUBLIC_SFX_TENANT_FM || ''
+          : process.env.NEXT_PUBLIC_SFX_TENANT_TV || '',
         codec: 'av1',
       },
       storeFingerprintForResuming: true,
@@ -263,14 +354,62 @@ function OndemandContent() {
         setUploadProgress(parseFloat(percentage));
       },
       onSuccess: async function () {
-        pollSfxJob(jobName);
+        const episodeRef = await createSfxEpisodeEarly(jobName);
+        pollSfxJob(jobName, episodeRef);
       }
     });
 
     upload.start();
   };
 
-  const pollSfxJob = async (jobName: string) => {
+  const createSfxEpisodeEarly = async (jobName: string) => {
+    const tenantPath = sfxTenant === 'fm'
+      ? process.env.NEXT_PUBLIC_SFX_TENANT_FM_PATH || ''
+      : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '';
+    const constructedUrl = `https://objects.solofx.net${tenantPath}/hls/${jobName.split('/').map(encodeURIComponent).join('/')}/index.m3u8`;
+    try {
+      const callable = httpsCallable(functionsEu, 'createSfxEpisode');
+      const payload: Record<string, unknown> = {
+        showId: selectedCollectionId,
+        videoUrl: constructedUrl,
+        sfxJobName: jobName,
+        title: videoTitle,
+        description: videoDescription,
+        published: false,
+        processing: true,
+      };
+      if (newSeasonMode && newSeasonTitle) {
+        payload.seasonTitle = newSeasonTitle;
+      } else if (selectedSeasonId) {
+        payload.seasonId = selectedSeasonId;
+      }
+      const res = await callable(payload) as any;
+      return res.data.episode as { id: string; seasonId: string } | null;
+    } catch (err) {
+      console.error('Failed to create SFX episode early:', err);
+      return null;
+    }
+  };
+
+  const updateSfxEpisode = async (
+    episodeRef: { id: string; seasonId: string } | null,
+    updates: Record<string, unknown>
+  ) => {
+    if (!episodeRef) return;
+    try {
+      const callable = httpsCallable(functionsEu, 'updateOnDemandEpisode');
+      await callable({
+        showId: selectedCollectionId,
+        seasonId: episodeRef.seasonId,
+        episodeId: episodeRef.id,
+        updates,
+      });
+    } catch (err) {
+      console.error('Failed to update SFX episode:', err);
+    }
+  };
+
+  const pollSfxJob = async (jobName: string, episodeRef?: { id: string; seasonId: string } | null) => {
     setSfxStatusText(`Transcoding started (${jobName})...`);
     let attempts = 0;
     while (attempts < 600) {
@@ -291,7 +430,6 @@ function OndemandContent() {
 
         if (status === 'done') {
           let duration = 0;
-          let thumbnail = '';
           try {
             const durRes = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(jobName)}&kind=duration`);
             if (durRes.ok) {
@@ -301,24 +439,27 @@ function OndemandContent() {
           } catch (err) {
             console.error('SFX duration fetch error:', err);
           }
-          try {
-            const vRes = await fetch(`/api/sfx/jobs?kind=videos`);
-            if (vRes.ok) {
-              const videos = await vRes.json();
-              const video = (Array.isArray(videos) ? videos : []).find((v: any) => v.name === jobName);
-              thumbnail = video?.thumbUrl || '';
-            }
-          } catch (err) {
-            console.error('SFX thumbnail fetch error:', err);
+          const thumbnail = job.hlsUrl?.replace(/\/index\.m3u8$/, '/poster.jpg') || '';
+          if (episodeRef) {
+            await updateSfxEpisode(episodeRef, {
+              videoUrl: job.hlsUrl || '',
+              thumbnail,
+              duration,
+              processing: false,
+            });
+          } else {
+            await createSfxEpisode(jobName, job.hlsUrl || '', duration, thumbnail);
           }
-          await createSfxEpisode(jobName, job.hlsUrl || '', duration, thumbnail);
+          alert('Video uploaded and added successfully!');
+          resetSfxUploadState();
           return;
         }
         if (status === 'failed') {
+          if (episodeRef) {
+            await updateSfxEpisode(episodeRef, { processing: false });
+          }
           alert(`SFX transcoding failed for job "${jobName}".`);
-          setIsUploading(false);
-          setUploadProgress(0);
-          setSfxStatusText(null);
+          resetSfxUploadState();
           return;
         }
       } catch (err) {
@@ -326,19 +467,17 @@ function OndemandContent() {
       }
     }
     alert('Timed out waiting for SFX transcode to complete. Check the SFX admin for job status.');
-    setIsUploading(false);
-    setUploadProgress(0);
-    setSfxStatusText(null);
+    resetSfxUploadState();
   };
 
-  const createSfxEpisode = async (jobName: string, hlsUrl: string, duration: number, thumbnail: string) => {
+  const createSfxEpisode = async (jobName: string, hlsUrl: string, duration: number, thumbnail: string, titleOverride?: string) => {
     try {
       const createSfxEpisodeCallable = httpsCallable(functionsEu, 'createSfxEpisode');
       const episodePayload: Record<string, unknown> = {
         showId: selectedCollectionId,
         videoUrl: hlsUrl,
         sfxJobName: jobName,
-        title: videoTitle,
+        title: titleOverride || videoTitle,
         description: videoDescription,
         duration,
         thumbnail,
@@ -353,11 +492,16 @@ function OndemandContent() {
       console.error('Failed to create SFX episode record:', episodeError);
     }
     alert('Video uploaded and added successfully!');
+    resetSfxUploadState();
+  };
+
+  const resetSfxUploadState = () => {
     setIsUploading(false);
     setUploadProgress(0);
     setSfxStatusText(null);
     setVideoFile(null);
     setSelectedVideoFromBunny(null);
+    setSelectedSfxVideo(null);
     setVideoTitle('');
     setVideoDescription('');
     setNewSeasonMode(false);
@@ -366,6 +510,28 @@ function OndemandContent() {
       fileInputRef.current.value = '';
     }
     queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+  };
+
+  const createSfxEpisodeFromExisting = async (video: SfxVideo) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+    setSfxStatusText(`Adding "${video.name}"...`);
+
+    let duration = 0;
+    try {
+      const durRes = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(video.name)}&kind=duration`);
+      if (durRes.ok) {
+        const dur = await durRes.json();
+        duration = typeof dur.duration === 'number' ? dur.duration : 0;
+      }
+    } catch (err) {
+      console.error('SFX duration fetch error:', err);
+    }
+
+    if (!videoTitle) {
+      setVideoTitle(video.name);
+    }
+    await createSfxEpisode(video.name, video.hlsUrl || '', duration, video.thumbUrl || '', videoTitle || video.name);
   };
 
   const createEpisode = async (videoId: string) => {
@@ -399,6 +565,25 @@ function OndemandContent() {
       fileInputRef.current.value = '';
     }
     queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+  };
+
+  const handleCreateShow = async () => {
+    if (!newShowTitle.trim()) {
+      alert('Please enter a show title.');
+      return;
+    }
+    try {
+      const createShowCallable = httpsCallable(functionsEu, 'createOnDemandShow');
+      const res = await createShowCallable({ title: newShowTitle.trim() }) as { data: { show: { id: string; title: string } } };
+      const show = res.data.show;
+      setSelectedCollectionId(show.id);
+      setNewShowMode(false);
+      setNewShowTitle('');
+      await queryClient.refetchQueries({ queryKey: ['onDemandData'] });
+    } catch (err) {
+      console.error('Failed to create show:', err);
+      alert(`Failed to create show: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleOpenEditDialog = (video: OnDemandContent) => {
@@ -533,6 +718,7 @@ function OndemandContent() {
               onValueChange={(v) => {
                 setUploadServer(v as 'bunny' | 'sfx');
                 setSelectedVideoFromBunny(null);
+                setSelectedSfxVideo(null);
               }}
             >
               <SelectTrigger className="bg-white/5 border-white/10 text-white h-10">
@@ -550,24 +736,86 @@ function OndemandContent() {
             </p>
           </div>
 
+          {uploadServer === 'sfx' && (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-white/80">Tenant</Label>
+              <Select
+                value={sfxTenant}
+                onValueChange={(v) => setSfxTenant(v as 'tv' | 'fm')}
+              >
+                <SelectTrigger className="bg-white/5 border-white/10 text-white h-10">
+                  <SelectValue placeholder="Select a tenant" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-white/10">
+                  <SelectItem value="tv" className="text-white">Salt TV</SelectItem>
+                  <SelectItem value="fm" className="text-white">Salt FM</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-white/40">
+                Uploads are routed into {sfxTenant === 'fm' ? 'the Salt FM' : 'the Salt TV'} container.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-sm font-medium text-white/80">Show</Label>
-              <Select
-                value={selectedCollectionId || ''}
-                onValueChange={setSelectedCollectionId}
-              >
-                <SelectTrigger className="bg-white/5 border-white/10 text-white h-10">
-                  <SelectValue placeholder="Select a show" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-white/10">
-                  {data?.documents.map((doc) => (
-                    <SelectItem key={doc.id} value={doc.id} className="text-white">
-                      {doc.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!newShowMode ? (
+                <div className="flex gap-2">
+                  <Select
+                    value={selectedCollectionId || ''}
+                    onValueChange={setSelectedCollectionId}
+                  >
+                    <SelectTrigger className="bg-white/5 border-white/10 text-white h-10 flex-1">
+                      <SelectValue placeholder="Select a show" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-900 border-white/10">
+                      {data?.documents.map((doc) => (
+                        <SelectItem key={doc.id} value={doc.id} className="text-white">
+                          {doc.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-white border-white/10 hover:bg-white/10 shrink-0 h-10"
+                    onClick={() => setNewShowMode(true)}
+                  >
+                    <HugeiconsIcon icon={AddCircleIcon} size={14} className="mr-1" />
+                    New
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Show title (e.g. The Gang)"
+                    value={newShowTitle}
+                    onChange={(e) => setNewShowTitle(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder-white/40 h-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-white border-white/10 hover:bg-white/10 shrink-0 h-10"
+                    onClick={handleCreateShow}
+                  >
+                    Create
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-white border-white/10 hover:bg-white/10 shrink-0 h-10"
+                    onClick={() => { setNewShowMode(false); setNewShowTitle(''); }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </div>
 
             {!videoFile ? (
@@ -594,7 +842,7 @@ function OndemandContent() {
                   <HugeiconsIcon icon={Video01Icon} size={16} className="text-green-400 shrink-0" />
                   <span className="text-sm text-white truncate flex-1">{videoFile.name}</span>
                   <button
-                    onClick={() => { setVideoFile(null); setSelectedVideoFromBunny(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                    onClick={() => { setVideoFile(null); setSelectedVideoFromBunny(null); setSelectedSfxVideo(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
                     className="text-white/40 hover:text-white/80 text-xs shrink-0"
                   >
                     Change
@@ -614,7 +862,7 @@ function OndemandContent() {
                     bunnyVideos?.map((v: any) => (
                       <button
                         key={v.guid}
-                        onClick={() => { setSelectedVideoFromBunny(v.guid); setVideoFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                        onClick={() => { setSelectedVideoFromBunny(v.guid); setSelectedSfxVideo(null); setVideoFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
                         className={`text-left p-2 rounded-lg border transition-all ${
                           selectedVideoFromBunny === v.guid
                             ? 'border-blue-400 bg-blue-500/20'
@@ -624,6 +872,58 @@ function OndemandContent() {
                         <p className="text-xs text-white truncate">{v.title}</p>
                       </button>
                     ))
+                  )}
+                </div>
+              </div>
+            )}
+            {selectedCollectionId && uploadServer === 'sfx' && !videoFile && (
+              <div className="space-y-2 col-span-full">
+                <Label className="text-sm font-medium text-white/80">Or select from existing SFX videos</Label>
+                <Input
+                  value={sfxSearch}
+                  onChange={(e) => setSfxSearch(e.target.value)}
+                  placeholder={`Search ${sfxVideos?.length || 0} videos...`}
+                  className="bg-white/5 border-white/10 text-white placeholder-white/40 h-9"
+                />
+                <div className="max-h-56 overflow-y-auto p-2 rounded-lg bg-white/5 border border-white/10">
+                  {loadingSfxVideos ? (
+                    <p className="text-xs text-white/40 text-center py-4">Loading videos...</p>
+                  ) : sfxVideos?.length === 0 ? (
+                    <p className="text-xs text-white/40 text-center py-4">No published SFX videos</p>
+                  ) : (
+                    sfxVideos
+                      ?.filter((v) => v.name.toLowerCase().includes(sfxSearch.trim().toLowerCase()))
+                      .map((v: SfxVideo) => (
+                        <button
+                          key={v.name}
+                          onClick={() => {
+                            setSelectedSfxVideo(v);
+                            setSelectedVideoFromBunny(null);
+                            setVideoFile(null);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
+                            if (!videoTitle) setVideoTitle(v.name);
+                          }}
+                          className={`w-full flex items-center gap-3 px-2 py-1.5 rounded-lg border transition-all ${
+                            selectedSfxVideo?.name === v.name
+                              ? 'border-blue-400 bg-blue-500/20'
+                              : 'border-transparent hover:border-white/10 hover:bg-white/5'
+                          }`}
+                        >
+                          {v.thumbUrl && (
+                            <img
+                              src={v.thumbUrl}
+                              alt=""
+                              referrerPolicy="no-referrer"
+                              className="w-12 h-8 object-cover rounded shrink-0"
+                              onError={(e) => (e.currentTarget.style.display = 'none')}
+                            />
+                          )}
+                          <span className="text-xs text-white truncate flex-1 text-left">{v.name}</span>
+                        </button>
+                      ))
+                  )}
+                  {sfxSearch && sfxVideos && sfxVideos.filter((v) => v.name.toLowerCase().includes(sfxSearch.trim().toLowerCase())).length === 0 && (
+                    <p className="text-xs text-white/40 text-center py-4">No videos match "{sfxSearch}"</p>
                   )}
                 </div>
               </div>
@@ -734,11 +1034,11 @@ function OndemandContent() {
           <div className="flex items-center gap-3 pt-2">
             <Button
               onClick={handleUpload}
-              disabled={isUploading || (!videoFile && !selectedVideoFromBunny)}
+              disabled={isUploading || (!videoFile && !selectedVideoFromBunny && !selectedSfxVideo)}
               className="bg-blue-600 hover:bg-blue-700 text-white h-10 px-6"
             >
               <HugeiconsIcon icon={CloudUploadIcon} size={16} className="mr-2" />
-              {isUploading ? 'Uploading...' : selectedVideoFromBunny ? 'Save' : 'Start Upload'}
+              {isUploading ? 'Uploading...' : selectedVideoFromBunny || selectedSfxVideo ? 'Save' : 'Start Upload'}
             </Button>
             {videoFile && !isUploading && (
               <span className="text-xs text-white/40">{videoFile.name}</span>
@@ -746,9 +1046,50 @@ function OndemandContent() {
             {selectedVideoFromBunny && !isUploading && (
               <span className="text-xs text-green-400/60">Existing video selected</span>
             )}
+            {selectedSfxVideo && !isUploading && (
+              <span className="text-xs text-green-400/60">Existing SFX video selected</span>
+            )}
           </div>
         </div>
       </div>
+
+      {uploadServer === 'sfx' && sfxActiveJobs && sfxActiveJobs.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            <h3 className="text-lg font-semibold text-white">Transcoding on SFX</h3>
+          </div>
+          {sfxActiveJobs.map((job) => {
+            const pct = job.status === 'queued'
+              ? 0
+              : job.stagePct || Math.round(((job.step || 0) / (job.total || 1)) * 100);
+            return (
+              <div key={job.name + (job.hlsUrl || '')} className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-sm text-white font-medium truncate">{sfxJobDisplayName(job)}</span>
+                  <span className="text-xs text-white/50 shrink-0">
+                    {job.status === 'queued'
+                      ? 'Queued'
+                      : `${job.stage || 'encoding'}${job.current ? ' — ' + job.current : ''}${job.eta ? ' — ETA ' + job.eta : ''}`}
+                  </span>
+                </div>
+                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-white/40">
+                  <span>Step {job.step || 0}/{job.total || 0}</span>
+                  <span>
+                    {job.elapsed != null && `${Math.floor(job.elapsed / 60)}m ${String(job.elapsed % 60).padStart(2, '0')}s`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {data?.documents && data.documents.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

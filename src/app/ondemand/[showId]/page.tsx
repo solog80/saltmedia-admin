@@ -30,6 +30,20 @@ interface Episode {
   dateUploaded: string;
   airDate: string;
   published?: boolean;
+  processing?: boolean;
+  sfxJobName?: string;
+}
+
+interface SfxJob {
+  name: string;
+  status?: string;
+  stage?: string;
+  current?: string;
+  step?: number;
+  total?: number;
+  stagePct?: number;
+  eta?: string;
+  hlsUrl?: string;
 }
 
 interface Season {
@@ -163,6 +177,72 @@ export default function ShowDetailPage() {
     queryFn: () => fetchOnDemandShowById(showId),
     enabled: !!showId,
   });
+
+  const { data: sfxJobs } = useQuery({
+    queryKey: ['sfx-jobs-detail'],
+    queryFn: async () => {
+      const res = await fetch(`/api/sfx/jobs`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    refetchInterval: 3000,
+  });
+
+  const finalizedEpisodeRef = useRef<Set<string>>(new Set());
+
+  const activeJobs = (sfxJobs || []).filter(
+    (j: SfxJob) => j.status === 'queued' || j.status === 'working'
+  );
+  const doneJobs = (sfxJobs || []).filter((j: SfxJob) => j.status === 'done');
+
+  const matchSfxJob = (episode: Episode, jobs: SfxJob[]) => {
+    const name = episode.sfxJobName || '';
+    if (!name) return undefined;
+    return jobs.find((j) => j.hlsUrl?.includes(encodeURI(name)));
+  };
+
+  useEffect(() => {
+    if (!seasonEpisodes.length) return;
+    for (const episode of seasonEpisodes) {
+      if (!episode.processing) continue;
+      if (finalizedEpisodeRef.current.has(episode.id)) continue;
+      const doneJob = matchSfxJob(episode, doneJobs);
+      if (!doneJob) continue;
+
+      finalizedEpisodeRef.current.add(episode.id);
+      (async () => {
+        let duration = 0;
+        try {
+          const name = episode.sfxJobName || '';
+          const durRes = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(name)}&kind=duration`);
+          if (durRes.ok) {
+            const dur = await durRes.json();
+            duration = typeof dur.duration === 'number' ? dur.duration : 0;
+          }
+        } catch (err) {
+          console.error('SFX duration fetch error:', err);
+        }
+        try {
+          const fn = httpsCallable(functionsEu, 'updateOnDemandEpisode');
+          await fn({
+            showId,
+            seasonId: selectedSeason,
+            episodeId: episode.id,
+            updates: {
+              videoUrl: doneJob.hlsUrl || '',
+              thumbnail: doneJob.hlsUrl?.replace(/\/index\.m3u8$/, '/poster.jpg') || '',
+              duration,
+              processing: false,
+            },
+          });
+        } catch (err) {
+          console.error('Failed to finalize SFX episode:', err);
+        }
+        if (selectedSeason) handleSelectSeason(selectedSeason);
+      })();
+    }
+  }, [seasonEpisodes, doneJobs, selectedSeason]);
 
   const handleSelectSeason = async (seasonId: string) => {
     setSelectedSeason(seasonId);
@@ -438,11 +518,17 @@ export default function ShowDetailPage() {
                 {selectedSeason === season.id && !loadingEpisodes && (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pl-4">
                     {seasonEpisodes.length > 0 ? (
-                      seasonEpisodes.map((episode, idx) => (
+                      seasonEpisodes.map((episode, idx) => {
+                        const activeJob = matchSfxJob(episode, activeJobs);
+                        const isProcessing = episode.processing === true || !!activeJob;
+                        const pct = activeJob?.status === 'queued'
+                          ? 0
+                          : activeJob?.stagePct || Math.round(((activeJob?.step || 0) / (activeJob?.total || 1)) * 100);
+                        return (
                         <div
                           key={episode.id}
                           className="rounded-lg overflow-hidden bg-white/5 border border-white/10 hover:border-blue-500/50 hover:bg-white/10 transition group cursor-pointer"
-                          onClick={() => handlePlayEpisode(episode)}
+                          onClick={() => { if (!isProcessing) handlePlayEpisode(episode); }}
                         >
                           <div className="relative aspect-video bg-gray-800 overflow-hidden">
                             {episode.thumbnail && (
@@ -454,17 +540,38 @@ export default function ShowDetailPage() {
                                 onError={(e) => (e.currentTarget.style.display = 'none')}
                               />
                             )}
-                            <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition flex items-center justify-center">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePlayEpisode(episode);
-                                }}
-                                className="bg-blue-600 hover:bg-blue-700 p-3 rounded-full opacity-0 group-hover:opacity-100 transition"
-                              >
-                                <Play className="w-6 h-6 text-white fill-white" />
-                              </button>
-                            </div>
+                            {isProcessing ? (
+                              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-2 p-3">
+                                <span className="text-[10px] font-semibold text-green-400 tracking-widest animate-pulse">TRANSCODING</span>
+                                {activeJob && (
+                                  <>
+                                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                                        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] text-white/60 text-center">
+                                      {activeJob.status === 'queued'
+                                        ? 'Queued'
+                                        : `${activeJob.stage || 'encoding'}${activeJob.current ? ' — ' + activeJob.current : ''}${activeJob.eta ? ' — ETA ' + activeJob.eta : ''}`}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition flex items-center justify-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePlayEpisode(episode);
+                                  }}
+                                  className="bg-blue-600 hover:bg-blue-700 p-3 rounded-full opacity-0 group-hover:opacity-100 transition"
+                                >
+                                  <Play className="w-6 h-6 text-white fill-white" />
+                                </button>
+                              </div>
+                            )}
                             {!isModerator && (
                               <>
                               <button
@@ -514,14 +621,15 @@ export default function ShowDetailPage() {
                               </p>
                             )}
                             <div className="flex justify-between items-center text-xs text-gray-500">
-                              <span>{formatDuration(episode.duration)}</span>
+                              <span>{isProcessing ? 'Processing…' : formatDuration(episode.duration)}</span>
                               <span>
                                 {episode.airDate ? new Date(episode.airDate).toLocaleDateString() : 'N/A'}
                               </span>
                             </div>
                           </div>
                         </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="col-span-full text-center py-8 text-gray-400">
                         No episodes found for this season.
