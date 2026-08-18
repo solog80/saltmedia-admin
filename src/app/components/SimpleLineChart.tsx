@@ -27,9 +27,13 @@ interface SimpleLineChartProps {
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
+    const show = payload[0]?.payload?.show;
     return (
       <div className="bg-black/80 text-white p-2 rounded-md border border-white/20 text-sm">
         <p className="font-bold mb-1">{label}</p>
+        {show && (
+          <p className="text-blue-300 text-xs mb-1 border-b border-white/10 pb-1">{show}</p>
+        )}
         {payload.map((p: any, i: number) => (
           <p key={i} style={{ color: p.color }}>{`${p.name}: ${p.value.toLocaleString()}`}</p>
         ))}
@@ -71,7 +75,10 @@ const SimpleLineChart: React.FC<SimpleLineChartProps> = ({ data, title, lines = 
             height={60}
             interval={0}
           />
-          <YAxis tick={{ fill: 'rgba(255, 255, 255, 0.6)', fontSize: 12 }} />
+          <YAxis
+            tick={{ fill: 'rgba(255, 255, 255, 0.6)', fontSize: 12 }}
+            tickFormatter={(v: any) => Number(v).toLocaleString()}
+          />
           <Tooltip content={<CustomTooltip />} />
           {lines.map(l => (
             <React.Fragment key={l.dataKey}>

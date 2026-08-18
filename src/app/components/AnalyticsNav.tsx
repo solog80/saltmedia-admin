@@ -10,6 +10,7 @@ import {
   Activity,
   Film,
   Smartphone,
+  Tv,
 } from 'lucide-react';
 
 const analyticsNavItems = [
@@ -47,6 +48,11 @@ const analyticsNavItems = [
     title: 'User & Device',
     href: '/analytics/firebase',
     icon: Smartphone,
+  },
+  {
+    title: 'Live TV',
+    href: '/analytics/live-tv',
+    icon: Tv,
   },
 ];
 
