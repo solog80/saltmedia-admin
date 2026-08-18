@@ -138,9 +138,9 @@ function OndemandContent() {
   const { data: sfxVideos, isLoading: loadingSfxVideos } = useQuery({
     queryKey: ['sfx-videos', sfxTenant],
     queryFn: async () => {
-      const tenantPath = sfxTenant === 'fm'
+      const tenantPath = (sfxTenant === 'fm'
         ? process.env.NEXT_PUBLIC_SFX_TENANT_FM_PATH || ''
-        : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '';
+        : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '').trim();
       const res = await fetch(`/api/sfx/jobs?kind=videos`);
       if (!res.ok) return [];
       const data = await res.json();
@@ -154,9 +154,9 @@ function OndemandContent() {
   const { data: sfxActiveJobs } = useQuery({
     queryKey: ['sfx-active-jobs', sfxTenant],
     queryFn: async () => {
-      const tenantPath = sfxTenant === 'fm'
+      const tenantPath = (sfxTenant === 'fm'
         ? process.env.NEXT_PUBLIC_SFX_TENANT_FM_PATH || ''
-        : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '';
+        : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '').trim();
       const res = await fetch(`/api/sfx/jobs`);
       if (!res.ok) return [];
       const data = await res.json();
@@ -336,9 +336,9 @@ function OndemandContent() {
       chunkSize: 50 * 1024 * 1024,
       metadata: {
         filename: uploadFilename,
-        tenant: sfxTenant === 'fm'
+        tenant: (sfxTenant === 'fm'
           ? process.env.NEXT_PUBLIC_SFX_TENANT_FM || ''
-          : process.env.NEXT_PUBLIC_SFX_TENANT_TV || '',
+          : process.env.NEXT_PUBLIC_SFX_TENANT_TV || '').trim(),
         codec: 'av1',
       },
       storeFingerprintForResuming: true,
@@ -363,9 +363,9 @@ function OndemandContent() {
   };
 
   const createSfxEpisodeEarly = async (jobName: string) => {
-    const tenantPath = sfxTenant === 'fm'
+    const tenantPath = (sfxTenant === 'fm'
       ? process.env.NEXT_PUBLIC_SFX_TENANT_FM_PATH || ''
-      : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '';
+      : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '').trim();
     const constructedUrl = `https://objects.solofx.net${tenantPath}/hls/${jobName.split('/').map(encodeURIComponent).join('/')}/index.m3u8`;
     try {
       const callable = httpsCallable(functionsEu, 'createSfxEpisode');
