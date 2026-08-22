@@ -1,18 +1,6 @@
-import { db } from "@/lib/firebase"
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-} from "firebase/firestore"
-import { httpsCallable } from "firebase/functions"
-import { functions } from "@/lib/firebase"
+// Ad API — backed by the self-hosted Supabase cluster (replaces Firestore +
+// BigQuery). All data access is proxied through server-side Next.js routes so
+// the service-role key never reaches the browser.
 
 interface Ad {
   id?: string
@@ -31,6 +19,9 @@ interface Ad {
   durationSeconds?: number
   vastTagUrl?: string
   vastWrapperLimit?: number
+  thumbnailUrl?: string
+  midRollTriggerType?: "percentage" | "timestamp"
+  midRollTriggerValue?: number
   startDate: Date
   endDate: Date
   priority: number
@@ -42,74 +33,81 @@ interface Ad {
   updatedAt?: Date
 }
 
+// PostgREST returns snake_case; the app expects the camelCase Ad model.
+function toAd(raw: any): Ad {
+  return {
+    id: raw.id,
+    adName: raw.adName ?? raw.ad_name,
+    adType: raw.adType ?? raw.ad_type,
+    status: raw.status,
+    placementType: raw.placementType ?? raw.placement_type ?? [],
+    targetingRules: raw.targetingRules ?? raw.targeting_rules,
+    creativeUrl: raw.creativeUrl ?? raw.creative_url,
+    creativeType: raw.creativeType ?? raw.creative_type,
+    landingPageUrl: raw.landingPageUrl ?? raw.landing_page_url,
+    durationSeconds: raw.durationSeconds ?? raw.duration_seconds,
+    vastTagUrl: raw.vastTagUrl ?? raw.vast_tag_url,
+    vastWrapperLimit: raw.vastWrapperLimit ?? raw.vast_wrapper_limit,
+    thumbnailUrl: raw.thumbnailUrl ?? raw.thumbnail_url,
+    midRollTriggerType: raw.midRollTriggerType ?? raw.mid_roll_trigger_type,
+    midRollTriggerValue: raw.midRollTriggerValue ?? raw.mid_roll_trigger_value,
+    priority: raw.priority,
+    frequencyCap: raw.frequencyCap ?? raw.frequency_cap,
+    startDate: new Date(raw.startDate ?? raw.start_date),
+    endDate: new Date(raw.endDate ?? raw.end_date),
+    createdAt: raw.createdAt ? new Date(raw.createdAt) : raw.created_at ? new Date(raw.created_at) : undefined,
+    updatedAt: raw.updatedAt ? new Date(raw.updatedAt) : raw.updated_at ? new Date(raw.updated_at) : undefined,
+  } as Ad
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    cache: "no-store",
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    throw new Error(data?.error || `Request failed (${res.status})`);
+  }
+  return data as T;
+}
+
 export const adsApi = {
-  // Get all ads from Firestore
+  // Get all ads (service role — includes inactive/pending, like old Firestore reads)
   async getAllAds(): Promise<Ad[]> {
     try {
-      const adsCollection = collection(db, "ads")
-      const q = query(adsCollection, orderBy("priority", "desc"))
-      const snapshot = await getDocs(q)
-
-      return snapshot.docs.map((doc) => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          ...data,
-          startDate: data.startDate?.toDate?.() || new Date(data.startDate),
-          endDate: data.endDate?.toDate?.() || new Date(data.endDate),
-          createdAt: data.createdAt?.toDate?.() || new Date(data.createdAt),
-          updatedAt: data.updatedAt?.toDate?.() || new Date(data.updatedAt),
-        } as Ad
-      })
+      const rows = await request<any[]>("/api/ads");
+      return rows.map(toAd);
     } catch (error) {
       console.error("Failed to fetch ads:", error)
       throw error
     }
   },
 
-  // Create a new ad in Firestore
+  // Create a new ad via PostgREST
   async createAd(ad: Ad): Promise<string> {
     try {
-      const adsCollection = collection(db, "ads")
-      const docRef = await addDoc(adsCollection, {
-        ...ad,
-        startDate: Timestamp.fromDate(ad.startDate),
-        endDate: Timestamp.fromDate(ad.endDate),
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
+      const result = await request<{ id: string }>("/api/ads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ad),
       })
-
-      // TODO: Cache in Upstash after creation
-      // await upstashClient.set(`ads:${docRef.id}`, JSON.stringify(ad))
-
-      return docRef.id
+      return result.id
     } catch (error) {
       console.error("Failed to create ad:", error)
       throw error
     }
   },
 
-  // Update an existing ad in Firestore
+  // Update an existing ad via PostgREST
   async updateAd(adId: string, updates: Partial<Ad>): Promise<void> {
     try {
-      const adRef = doc(db, "ads", adId)
-
-      const dataToUpdate: any = {
-        ...updates,
-        updatedAt: Timestamp.now(),
-      }
-
-      if (updates.startDate) {
-        dataToUpdate.startDate = Timestamp.fromDate(updates.startDate)
-      }
-      if (updates.endDate) {
-        dataToUpdate.endDate = Timestamp.fromDate(updates.endDate)
-      }
-
-      await updateDoc(adRef, dataToUpdate)
-
-      // TODO: Update cache in Upstash
-      // await upstashClient.set(`ads:${adId}`, JSON.stringify({ ...updates }))
+      await request("/api/ads?id=" + encodeURIComponent(adId), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      })
     } catch (error) {
       console.error("Failed to update ad:", error)
       throw error
@@ -124,30 +122,26 @@ export const adsApi = {
     return this.updateAd(adId, { status })
   },
 
-  // Delete an ad from Firestore
+  // Delete an ad from PostgREST
   async deleteAd(adId: string): Promise<void> {
     try {
-      const adRef = doc(db, "ads", adId)
-      await deleteDoc(adRef)
-
-      // TODO: Delete from Upstash cache
-      // await upstashClient.del(`ads:${adId}`)
+      await request("/api/ads?id=" + encodeURIComponent(adId), {
+        method: "DELETE",
+      })
     } catch (error) {
       console.error("Failed to delete ad:", error)
       throw error
     }
   },
 
-  // Get ad analytics from Cloud Functions or BigQuery
+  // Get ad analytics from the cluster Go service (TimescaleDB hypertable)
   async getAdAnalytics(startDate: Date, endDate: Date): Promise<any> {
     try {
-      // Call Cloud Function to get analytics
-      const getAdAnalyticsFunction = httpsCallable(functions, "getAdAnalytics")
-      const response = await getAdAnalyticsFunction({
+      const params = new URLSearchParams({
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
       })
-      return response.data
+      return await request<any>(`/api/ads/analytics?${params.toString()}`)
     } catch (error) {
       console.error("Failed to fetch ad analytics:", error)
       return {
@@ -162,86 +156,39 @@ export const adsApi = {
     }
   },
 
-  // Refresh cache in Upstash (no RTDB)
+  // Refresh the server-side ad cache (Go service /api/v1/refreshAdCache).
+  // No-op if the local route isn't wired; logs instead of throwing.
   async refreshAdCache(): Promise<void> {
     try {
-      // TODO: Implement Upstash cache refresh
-      // const allAds = await this.getAllAds()
-      // for (const ad of allAds) {
-      //   if (ad.status === 'active') {
-      //     await upstashClient.set(
-      //       `ads:${ad.id}`,
-      //       JSON.stringify(ad),
-      //       { ex: 3600 } // 1 hour TTL
-      //     )
-      //   }
-      // }
-      console.log("Ad cache refresh (Upstash) would be triggered here")
+      await request("/api/ads/cache-refresh", { method: "POST" })
     } catch (error) {
       console.error("Failed to refresh ad cache:", error)
     }
   },
 
-  // Get ad by ID from Firestore
+  // Get a single ad by ID
   async getAdById(adId: string): Promise<Ad | null> {
     try {
-      const adsCollection = collection(db, "ads")
-      const q = query(adsCollection, where("__name__", "==", adId))
-      const snapshot = await getDocs(q)
-
-      if (snapshot.empty) {
-        return null
-      }
-
-      const data = snapshot.docs[0].data()
-      return {
-        id: snapshot.docs[0].id,
-        ...data,
-        startDate: data.startDate?.toDate?.() || new Date(data.startDate),
-        endDate: data.endDate?.toDate?.() || new Date(data.endDate),
-        createdAt: data.createdAt?.toDate?.() || new Date(data.createdAt),
-        updatedAt: data.updatedAt?.toDate?.() || new Date(data.updatedAt),
-      } as Ad
+      const rows = await request<any[]>(`/api/ads?id=${encodeURIComponent(adId)}`)
+      if (!rows || rows.length === 0) return null
+      return toAd(rows[0])
     } catch (error) {
       console.error("Failed to fetch ad by ID:", error)
       return null
     }
   },
 
-  // Get active ads for mobile (check Upstash cache first, then Firestore)
+  // Get active ads for mobile (used by admin previews/other modules)
   async getActiveAds(placement?: string): Promise<Ad[]> {
     try {
-      // TODO: Check Upstash cache first
-      // const cached = await upstashClient.get(`ads:active:${placement || 'all'}`)
-      // if (cached) return JSON.parse(cached)
-
-      // Fallback to Firestore
-      const adsCollection = collection(db, "ads")
-      let q = query(
-        adsCollection,
-        where("status", "==", "active"),
-        orderBy("priority", "desc")
-      )
-
-      const snapshot = await getDocs(q)
-
-      let ads = snapshot.docs.map((doc) => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          ...data,
-          startDate: data.startDate?.toDate?.() || new Date(data.startDate),
-          endDate: data.endDate?.toDate?.() || new Date(data.endDate),
-          createdAt: data.createdAt?.toDate?.() || new Date(data.createdAt),
-          updatedAt: data.updatedAt?.toDate?.() || new Date(data.updatedAt),
-        } as Ad
-      })
-
-      // Filter by placement if provided
+      const rows = await request<any[]>("/api/ads")
+      let ads = rows
+        .filter((ad) => ad.status === "active")
+        .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+        .map(toAd)
       if (placement) {
         ads = ads.filter((ad) => ad.placementType.includes(placement))
       }
-
       return ads
     } catch (error) {
       console.error("Failed to fetch active ads:", error)
