@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const ANALYTICS_FUNCTION_URL =
-  'https://europe-west1-salt-media-app1.cloudfunctions.net/getAnalyticsMetrics';
+  process.env.API_BASE_URL + '/getAnalyticsMetrics';
+const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +22,11 @@ export async function GET(request: NextRequest) {
     const [appResult, radioResult, showsResult, snapshotsResult] = await Promise.allSettled([
       fetch(`${ANALYTICS_FUNCTION_URL}?days=${days}`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+        },
         cache: 'no-store',
       }).then(r => r.ok ? r.json() : Promise.reject(r.status)),
       fetch(radioReportsUrl, {
