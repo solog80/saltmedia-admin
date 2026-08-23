@@ -170,6 +170,7 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
             <tr className="border-b border-white/10">
               <th className="text-left pb-3 pr-3 text-xs font-medium text-white/50">Show</th>
               <th className="text-left pb-3 pr-3 text-xs font-medium text-white/50 hidden sm:table-cell">Time (UTC)</th>
+              <th className="text-center pb-3 pr-3 text-xs font-medium text-white/50">Total Min</th>
               <th className="text-center pb-3 pr-3 text-xs font-medium text-white/50">Avg</th>
               <th className="text-center pb-3 pr-3 text-xs font-medium text-white/50">Peak</th>
               <th className="text-center pb-3 pr-3 text-xs font-medium text-white/50">Unique</th>
@@ -196,9 +197,10 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
                     </div>
                   </div>
                 </td>
-                <td className="py-2.5 pr-3 text-white/50 text-xs whitespace-nowrap hidden sm:table-cell">
+                <td className="py-2.5 pr-3 text-left text-white/50 text-xs whitespace-nowrap hidden sm:table-cell">
                   {show.startTime}-{show.endTime}
                 </td>
+                <td className="py-2.5 pr-3 text-center text-white/80">{show.snapshots?.toLocaleString() || '-'}</td>
                 <td className="py-2.5 pr-3 text-center text-white font-medium">{show.avgListeners || '-'}</td>
                 <td className="py-2.5 pr-3 text-center text-white font-medium">{show.peakListeners || '-'}</td>
                 <td className="py-2.5 pr-3 text-center text-white/80">{show.uniqueListeners || '-'}</td>
