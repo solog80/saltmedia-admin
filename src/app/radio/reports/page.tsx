@@ -161,8 +161,8 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
   const overallAvg = data.shows.reduce((s: number, sh: any) => s + (sh.avgListeners || 0), 0);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 flex flex-col h-[calc(100vh-320px)] min-h-[280px]">
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Radio size={18} className="text-blue-400" />
           <h2 className="text-lg font-semibold text-white">Show Listener Snapshot</h2>
@@ -170,7 +170,7 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-4 gap-4 shrink-0">
         <div className="frosted-glass p-4 border border-blue-500/30 rounded-lg text-center">
           <p className="text-2xl font-bold text-white">{data.shows.length}</p>
           <p className="text-xs text-white/50">Shows</p>
@@ -192,7 +192,7 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
         </div>
       </div>
 
-      <div className="frosted-glass p-5 border border-blue-500/30 rounded-lg overflow-x-auto h-[calc(100vh-240px)] min-h-[320px] overflow-y-auto">
+      <div className="frosted-glass p-5 border border-blue-500/30 rounded-lg overflow-x-auto flex-1 min-h-0 overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-gray-900 z-10">
             <tr className="border-b border-white/10">
@@ -242,7 +242,7 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
       </div>
 
       {(data?.totalShows || 0) > showsPageSize && (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between shrink-0">
           <span className="text-xs text-white/40">
             Page {showsPage} of {Math.ceil((data?.totalShows || 0) / showsPageSize)} ({data?.totalShows} shows)
           </span>
