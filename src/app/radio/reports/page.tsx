@@ -161,7 +161,7 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
   const overallAvg = data.shows.reduce((s: number, sh: any) => s + (sh.avgListeners || 0), 0);
 
   return (
-    <div className="space-y-4 flex flex-col h-[calc(100vh-320px)] min-h-[280px]">
+    <div className="space-y-4 flex flex-col h-full min-h-[280px]">
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Radio size={18} className="text-blue-400" />
@@ -611,8 +611,8 @@ export default function RadioReportsPage() {
   }));
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-6 h-screen flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between shrink-0">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <h1 className="text-4xl font-bold text-white">Radio Reports</h1>
@@ -644,7 +644,7 @@ export default function RadioReportsPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex bg-white/5 p-1 rounded-lg border border-white/10 w-full overflow-x-auto">
+      <div className="flex bg-white/5 p-1 rounded-lg border border-white/10 w-full overflow-x-auto shrink-0">
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -661,6 +661,7 @@ export default function RadioReportsPage() {
         ))}
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto">
       {activeTab === 'overview' && (
       <div className="frosted-glass p-6 border border-purple-500/30 rounded-lg">
         <div className="flex items-center gap-6">
@@ -1178,6 +1179,7 @@ export default function RadioReportsPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
