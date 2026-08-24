@@ -192,7 +192,7 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
         </div>
       </div>
 
-      <div className="frosted-glass p-5 border border-blue-500/30 rounded-lg overflow-x-auto max-h-[480px] overflow-y-auto">
+      <div className="frosted-glass p-5 border border-blue-500/30 rounded-lg overflow-x-auto h-[calc(100vh-240px)] min-h-[320px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-gray-900 z-10">
             <tr className="border-b border-white/10">
