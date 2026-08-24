@@ -7,14 +7,17 @@ import { app } from './firebase';
  */
 export const fetchOnDemandData = async ({ queryKey: _ }: { queryKey: any }) => {
   try {
-    const functionsEu = getFunctions(app, 'europe-west1');
-    const getOnDemandDataCallable = httpsCallable(functionsEu, 'getOnDemandData');
-    const result = await getOnDemandDataCallable() as any;
+    const res = await fetch('/api/ondemand', { cache: 'no-store' });
 
-    console.log('[fetchOnDemandData] Data loaded from:', result.data.source);
+    if (!res.ok) {
+      throw new Error(`On-demand fetch failed: ${res.status}`);
+    }
+    const result = await res.json();
+
+    console.log('[fetchOnDemandData] Data loaded from:', result.source);
 
     // Extract shows from unified cache format {shows: [...]}
-    const showsData = result.data.data?.shows || [];
+    const showsData = result.data?.shows || [];
 
     // Transform shows: use poster if it's not a BunnyCDN placeholder, else fallback to thumbnail
     const shows = showsData.map((show: any) => ({
@@ -39,13 +42,16 @@ export const fetchOnDemandData = async ({ queryKey: _ }: { queryKey: any }) => {
  */
 export const fetchOnDemandShowById = async (showId: string) => {
   try {
-    const functionsEu = getFunctions(app, 'europe-west1');
-    const getShowCallable = httpsCallable(functionsEu, 'getOnDemandShowById');
-    const result = await getShowCallable({ showId }) as any;
+    const res = await fetch(`/api/ondemand?mode=show&showId=${encodeURIComponent(showId)}`, { cache: 'no-store' });
 
-    console.log('[fetchOnDemandShowById] Show loaded from:', result.data.source);
+    if (!res.ok) {
+      throw new Error(`On-demand show fetch failed: ${res.status}`);
+    }
+    const result = await res.json();
 
-    return result.data.data;
+    console.log('[fetchOnDemandShowById] Show loaded from:', result.source);
+
+    return result.data;
   } catch (error) {
     console.error('[fetchOnDemandShowById] Error:', error);
     throw error;
@@ -57,13 +63,19 @@ export const fetchOnDemandShowById = async (showId: string) => {
  */
 export const fetchOnDemandSeasonEpisodes = async (showId: string, seasonId: string) => {
   try {
-    const functionsEu = getFunctions(app, 'europe-west1');
-    const getEpisodesCallable = httpsCallable(functionsEu, 'getOnDemandSeasonEpisodes');
-    const result = await getEpisodesCallable({ showId, seasonId }) as any;
+    const res = await fetch(
+      `/api/ondemand?mode=season&showId=${encodeURIComponent(showId)}&seasonId=${encodeURIComponent(seasonId)}`,
+      { cache: 'no-store' }
+    );
 
-    console.log('[fetchOnDemandSeasonEpisodes] Episodes loaded from:', result.data.source);
+    if (!res.ok) {
+      throw new Error(`On-demand season fetch failed: ${res.status}`);
+    }
+    const result = await res.json();
 
-    return result.data.data;
+    console.log('[fetchOnDemandSeasonEpisodes] Episodes loaded from:', result.source);
+
+    return result.data;
   } catch (error) {
     console.error('[fetchOnDemandSeasonEpisodes] Error:', error);
     throw error;

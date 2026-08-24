@@ -41,8 +41,21 @@ import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
 import AddCircleIcon from '@hugeicons/core-free-icons/dist/esm/AddCircleIcon';
 
 const functions = getFunctions(app, 'us-central1');
-const functionsEu = getFunctions(app, 'europe-west1');
 const queryClient = new QueryClient();
+
+/** Call an on-demand admin operation via the server-side proxy. */
+async function ondemandProxy(action: string, body: Record<string, unknown> = {}) {
+  const res = await fetch('/api/ondemand', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...body }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || `On-demand ${action} failed (${res.status})`);
+  }
+  return data;
+}
 
 interface SfxVideo {
   name: string;
@@ -368,7 +381,6 @@ function OndemandContent() {
       : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '').trim();
     const constructedUrl = `https://objects.solofx.net${tenantPath}/hls/${jobName.split('/').map(encodeURIComponent).join('/')}/index.m3u8`;
     try {
-      const callable = httpsCallable(functionsEu, 'createSfxEpisode');
       const payload: Record<string, unknown> = {
         showId: selectedCollectionId,
         videoUrl: constructedUrl,
@@ -383,8 +395,8 @@ function OndemandContent() {
       } else if (selectedSeasonId) {
         payload.seasonId = selectedSeasonId;
       }
-      const res = await callable(payload) as any;
-      return res.data.episode as { id: string; seasonId: string } | null;
+      const res = await ondemandProxy('createSfxEpisode', payload);
+      return res.episode as { id: string; seasonId: string } | null;
     } catch (err) {
       console.error('Failed to create SFX episode early:', err);
       return null;
@@ -397,8 +409,7 @@ function OndemandContent() {
   ) => {
     if (!episodeRef) return;
     try {
-      const callable = httpsCallable(functionsEu, 'updateOnDemandEpisode');
-      await callable({
+      await ondemandProxy('updateEpisode', {
         showId: selectedCollectionId,
         seasonId: episodeRef.seasonId,
         episodeId: episodeRef.id,
@@ -472,7 +483,6 @@ function OndemandContent() {
 
   const createSfxEpisode = async (jobName: string, hlsUrl: string, duration: number, thumbnail: string, titleOverride?: string) => {
     try {
-      const createSfxEpisodeCallable = httpsCallable(functionsEu, 'createSfxEpisode');
       const episodePayload: Record<string, unknown> = {
         showId: selectedCollectionId,
         videoUrl: hlsUrl,
@@ -487,7 +497,7 @@ function OndemandContent() {
       } else if (selectedSeasonId) {
         episodePayload.seasonId = selectedSeasonId;
       }
-      await createSfxEpisodeCallable(episodePayload);
+      await ondemandProxy('createSfxEpisode', episodePayload);
     } catch (episodeError) {
       console.error('Failed to create SFX episode record:', episodeError);
     }
@@ -573,9 +583,8 @@ function OndemandContent() {
       return;
     }
     try {
-      const createShowCallable = httpsCallable(functionsEu, 'createOnDemandShow');
-      const res = await createShowCallable({ title: newShowTitle.trim() }) as { data: { show: { id: string; title: string } } };
-      const show = res.data.show;
+      const res = await ondemandProxy('createShow', { title: newShowTitle.trim() });
+      const show = res.show;
       setSelectedCollectionId(show.id);
       setNewShowMode(false);
       setNewShowTitle('');
@@ -611,14 +620,13 @@ function OndemandContent() {
         reader.onerror = reject;
       });
 
-      const uploadCallable = httpsCallable(functionsEu, 'uploadShowPoster');
-      const result = await uploadCallable({
+      const uploadResult = await ondemandProxy('uploadPoster', {
         showId: currentVideo.id,
         aspect,
         imageBase64: base64,
-      }) as any;
+      });
 
-      const url = result.data.url;
+      const url = uploadResult.url;
       if (aspect === '16x9') setEditPoster16x9(url);
       else setEditPoster2x3(url);
     } catch (error: any) {
@@ -634,8 +642,7 @@ function OndemandContent() {
     if (!currentVideo) return;
 
     try {
-      const updateShowCallable = httpsCallable(functionsEu, 'updateOnDemandShow');
-      await updateShowCallable({
+      await ondemandProxy('updateShow', {
         showId: currentVideo.id,
         updates: {
           title: editTitle,
@@ -658,8 +665,7 @@ function OndemandContent() {
     if (!videoToDelete) return;
 
     try {
-      const deleteShowCallable = httpsCallable(functionsEu, 'deleteOnDemandShow');
-      await deleteShowCallable({ showId: videoToDelete.id });
+      await ondemandProxy('deleteShow', { showId: videoToDelete.id });
       alert('Show deleted successfully!');
       queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
       setDeleteDialogOpen(false);

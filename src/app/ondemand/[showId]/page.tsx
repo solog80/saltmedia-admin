@@ -3,8 +3,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, QueryClient } from '@tanstack/react-query';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { app } from '@/lib/firebase';
 import { ChevronLeft, Play, X, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,7 +16,19 @@ import {
 import { fetchOnDemandShowById, fetchOnDemandSeasonEpisodes } from '@/lib/queries';
 import { useAuth } from '@/context/AuthContext';
 
-const functionsEu = getFunctions(app, 'europe-west1');
+/** Call an on-demand admin operation via the server-side proxy. */
+async function ondemandProxy(action: string, body: Record<string, unknown> = {}) {
+  const res = await fetch('/api/ondemand', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...body }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || `On-demand ${action} failed (${res.status})`);
+  }
+  return data;
+}
 
 interface Episode {
   id: string;
@@ -224,8 +234,7 @@ export default function ShowDetailPage() {
           console.error('SFX duration fetch error:', err);
         }
         try {
-          const fn = httpsCallable(functionsEu, 'updateOnDemandEpisode');
-          await fn({
+          await ondemandProxy('updateEpisode', {
             showId,
             seasonId: selectedSeason,
             episodeId: episode.id,
@@ -265,8 +274,7 @@ export default function ShowDetailPage() {
   const handleDeleteSeason = async () => {
     if (!seasonToDelete) return;
     try {
-      const fn = httpsCallable(functionsEu, 'deleteOnDemandSeason');
-      await fn({ showId, seasonId: seasonToDelete.id });
+      await ondemandProxy('deleteSeason', { showId, seasonId: seasonToDelete.id });
       setSeasonToDelete(null);
       setSelectedSeason(null);
       setSeasonEpisodes([]);
@@ -278,8 +286,7 @@ export default function ShowDetailPage() {
 
   const handleToggleSeasonPublish = async (seasonId: string, current: boolean) => {
     try {
-      const fn = httpsCallable(functionsEu, 'updateOnDemandSeason');
-      await fn({ showId, seasonId, updates: { published: !current } });
+      await ondemandProxy('updateSeason', { showId, seasonId, updates: { published: !current } });
       queryClient.invalidateQueries({ queryKey: ['show', showId] });
     } catch (err: any) {
       alert('Failed to update season: ' + err.message);
@@ -288,8 +295,7 @@ export default function ShowDetailPage() {
 
   const handleToggleEpisodePublish = async (episodeId: string, current: boolean) => {
     try {
-      const fn = httpsCallable(functionsEu, 'updateOnDemandEpisode');
-      await fn({ showId, seasonId: selectedSeason, episodeId, updates: { published: !current } });
+      await ondemandProxy('updateEpisode', { showId, seasonId: selectedSeason, episodeId, updates: { published: !current } });
       setSeasonEpisodes(prev => prev.map(e => e.id === episodeId ? { ...e, published: !current } : e));
       queryClient.invalidateQueries({ queryKey: ['show', showId] });
     } catch (err: any) {
@@ -300,8 +306,7 @@ export default function ShowDetailPage() {
   const handleDeleteEpisode = async () => {
     if (!episodeToDelete) return;
     try {
-      const fn = httpsCallable(functionsEu, 'deleteOnDemandEpisode');
-      await fn({ showId, seasonId: selectedSeason, episodeId: episodeToDelete.id });
+      await ondemandProxy('deleteEpisode', { showId, seasonId: selectedSeason, episodeId: episodeToDelete.id });
       setEpisodeToDelete(null);
       setSeasonEpisodes(prev => prev.filter(e => e.id !== episodeToDelete.id));
       queryClient.invalidateQueries({ queryKey: ['show', showId] });
@@ -313,8 +318,7 @@ export default function ShowDetailPage() {
   const handleEditEpisode = async () => {
     if (!episodeToEdit) return;
     try {
-      const fn = httpsCallable(functionsEu, 'updateOnDemandEpisode');
-      await fn({ showId, seasonId: selectedSeason, episodeId: episodeToEdit.id, updates: { title: editTitle, description: editDescription } });
+      await ondemandProxy('updateEpisode', { showId, seasonId: selectedSeason, episodeId: episodeToEdit.id, updates: { title: editTitle, description: editDescription } });
       setEpisodeToEdit(null);
       setSeasonEpisodes(prev => prev.map(e => e.id === episodeToEdit.id ? { ...e, title: editTitle, description: editDescription } : e));
       queryClient.invalidateQueries({ queryKey: ['show', showId] });
