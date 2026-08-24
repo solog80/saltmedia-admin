@@ -31,6 +31,7 @@ import {
 import { useRadioReports } from '@/lib/hooks/useRadioReports';
 import DateRangePicker from '@/app/components/DateRangePicker';
 import SimpleLineChart from '@/app/components/SimpleLineChart';
+import { Button } from '@/components/ui/button';
 import SimpleBarChart from '@/app/components/SimpleBarChart';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
@@ -75,6 +76,9 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
   const [timelineShow, setTimelineShow] = useState<any>(null);
   const [listenerPage, setListenerPage] = useState(1);
   const [showTotalChart, setShowTotalChart] = useState(false);
+  const [showsPage, setShowsPage] = useState(1);
+  const showsPageSize = 15;
+  const [timelineLoading, setTimelineLoading] = useState(false);
 
   const { data: listenerData, isLoading: listenersLoading } = useQuery({
     queryKey: ['radio-show-listeners', startDate, endDate, timelineShow?.programName, listenerPage],
@@ -99,17 +103,41 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
   }, [timelineShow?.programName]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['radio-show-snapshots', startDate, endDate],
+    queryKey: ['radio-show-snapshots', startDate, endDate, showsPage],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (startDate) params.set('startDate', startDate);
       if (endDate) params.set('endDate', endDate);
+      params.set('limit', String(showsPageSize));
+      params.set('offset', String((showsPage - 1) * showsPageSize));
       const res = await fetch(`/api/radio-show-snapshots?${params.toString()}`);
       if (!res.ok) throw new Error('Failed');
       return res.json();
     },
     staleTime: 15000,
   });
+
+  // Lazy-load a single show's full timeline when its row is clicked.
+  const openTimeline = async (show: any) => {
+    if (show.timeline?.length <= 1) return;
+    setTimelineLoading(true);
+    setTimelineShow({ ...show, timeline: [] });
+    try {
+      const params = new URLSearchParams();
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+      params.set('showName', show.programName);
+      const res = await fetch(`/api/radio-show-snapshots?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed');
+      const json = await res.json();
+      const match = (json.shows || []).find((s: any) => s.programName === show.programName);
+      setTimelineShow(match || show);
+    } catch (e) {
+      setTimelineShow(show);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -183,8 +211,8 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
             {data.shows.map((show: any, i: number) => (
               <tr
                 key={i}
-                className={`border-b border-white/5 transition-colors ${show.timeline?.length > 1 ? 'cursor-pointer hover:bg-white/5' : ''}`}
-                onClick={() => { if (show.timeline?.length > 1) setTimelineShow(show); }}
+                className={`border-b border-white/5 transition-colors ${show.timeline?.length > 1 || show.airings > 1 ? 'cursor-pointer hover:bg-white/5' : ''}`}
+                onClick={() => { if (show.airings > 1 || show.timeline?.length > 1) openTimeline(show); }}
               >
                 <td className="py-2.5 pr-3">
                   <div className="flex items-center gap-2">
@@ -213,6 +241,34 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
         </table>
       </div>
 
+      {(data?.totalShows || 0) > showsPageSize && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-white/40">
+            Page {showsPage} of {Math.ceil((data?.totalShows || 0) / showsPageSize)} ({data?.totalShows} shows)
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={showsPage <= 1}
+              onClick={() => setShowsPage(p => Math.max(1, p - 1))}
+              className="text-white border-white/10 hover:bg-white/10 h-8 px-3"
+            >
+              Prev
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={showsPage >= Math.ceil((data?.totalShows || 0) / showsPageSize)}
+              onClick={() => setShowsPage(p => p + 1)}
+              className="text-white border-white/10 hover:bg-white/10 h-8 px-3"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+
       {timelineShow && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="frosted-glass border border-white/20 p-6 rounded-lg w-full max-w-2xl relative max-h-[80vh] overflow-y-auto">
@@ -226,11 +282,17 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
               <div>
                 <h2 className="text-xl font-bold text-white">{timelineShow.programName}</h2>
                 <p className="text-white/50 text-xs">
-                  Peak: {timelineShow.peakListeners} listeners &middot; {timelineShow.timeline.length} data points
+                  {timelineLoading
+                    ? 'Loading timeline...'
+                    : `Peak: ${timelineShow.peakListeners} listeners &middot; ${timelineShow.timeline?.length || 0} data points`}
                 </p>
               </div>
             </div>
-            {timelineShow.timeline?.length > 1 ? (
+            {timelineLoading ? (
+              <div className="h-64 flex items-center justify-center">
+                <Loader size={28} className="animate-spin text-blue-400" />
+              </div>
+            ) : timelineShow.timeline?.length > 1 ? (
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart

@@ -9,9 +9,15 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate') || '';
     const endDate = searchParams.get('endDate') || '';
+    const showName = searchParams.get('showName') || '';
+    const limit = searchParams.get('limit') || '';
+    const offset = searchParams.get('offset') || '';
     const params = new URLSearchParams();
     if (startDate) params.set('startDate', startDate);
     if (endDate) params.set('endDate', endDate);
+    if (showName) params.set('showName', showName);
+    if (limit) params.set('limit', limit);
+    if (offset) params.set('offset', offset);
 
     const url = `${API_BASE}/getRadioShowSnapshots?${params.toString()}`;
     const response = await fetch(url, {
