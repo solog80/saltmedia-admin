@@ -216,8 +216,8 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
               >
                 <td className="py-2.5 pr-3">
                   <div className="flex items-center gap-2">
-                    {show.thumbnail && (
-                      <img src={show.thumbnail} alt="" className="w-8 h-8 rounded object-cover bg-white/5" />
+                    {imgCacheBust(show.thumbnail) && (
+                      <img src={imgCacheBust(show.thumbnail)} alt="" className="w-8 h-8 rounded object-cover bg-white/5" />
                     )}
                     <div>
                       <p className="text-white font-medium text-sm truncate max-w-[160px]">{show.programName}</p>
@@ -276,8 +276,8 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
               <X size={20} />
             </button>
             <div className="flex items-center gap-3 mb-5">
-              {timelineShow.thumbnail && (
-                <img src={timelineShow.thumbnail} alt="" className="w-10 h-10 rounded object-cover bg-white/5" />
+              {imgCacheBust(timelineShow.thumbnail) && (
+                <img src={imgCacheBust(timelineShow.thumbnail)} alt="" className="w-10 h-10 rounded object-cover bg-white/5" />
               )}
               <div>
                 <h2 className="text-xl font-bold text-white">{timelineShow.programName}</h2>
@@ -519,6 +519,12 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
   );
 }
 
+/** Append a cache-busting query param to invalidate stale edge-cached images
+ * (Cloudflare/Varnish keep serving old bytes until TTL after a storage repair). */
+function imgCacheBust(u: string | null | undefined) {
+  return u ? `${u}${u.includes('?') ? '&' : '?'}v=3` : '';
+}
+
 function last30Days() {
   const end = new Date().toISOString().split('T')[0];
   const start = new Date(Date.now() - 29 * 86400000).toISOString().split('T')[0];
@@ -678,8 +684,8 @@ export default function RadioReportsPage() {
           {data?.currentShow && (
             <>
               <div className="w-px h-12 bg-white/10 shrink-0" />
-              {data.currentShow.image && (
-                <img src={data.currentShow.image} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 bg-white/5" />
+              {imgCacheBust(data.currentShow.image) && (
+                <img src={imgCacheBust(data.currentShow.image)} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 bg-white/5" />
               )}
               <div className="min-w-0">
                 <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Current Show</p>
