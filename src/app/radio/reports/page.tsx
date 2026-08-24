@@ -77,7 +77,7 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
   const [listenerPage, setListenerPage] = useState(1);
   const [showTotalChart, setShowTotalChart] = useState(false);
   const [showsPage, setShowsPage] = useState(1);
-  const showsPageSize = 15;
+  const showsPageSize = 10;
   const [timelineLoading, setTimelineLoading] = useState(false);
 
   const { data: listenerData, isLoading: listenersLoading } = useQuery({
@@ -192,9 +192,9 @@ function ShowSnapshots({ startDate, endDate }: { startDate: string; endDate: str
         </div>
       </div>
 
-      <div className="frosted-glass p-5 border border-blue-500/30 rounded-lg overflow-x-auto">
+      <div className="frosted-glass p-5 border border-blue-500/30 rounded-lg overflow-x-auto max-h-[480px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 bg-gray-900 z-10">
             <tr className="border-b border-white/10">
               <th className="text-left pb-3 pr-3 text-xs font-medium text-white/50">Show</th>
               <th className="text-left pb-3 pr-3 text-xs font-medium text-white/50 hidden sm:table-cell">Time (UTC)</th>
