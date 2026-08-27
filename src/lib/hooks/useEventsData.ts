@@ -1,4 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app } from '../firebase';
+
+const functions = getFunctions(app, 'europe-west1');
+
+// Best-effort mirror to Firebase (Firestore) while migrating. The mesh
+// (Supabase) write is authoritative; Firebase failures are logged, not fatal.
+async function mirrorCallable(fnName: string, args: unknown) {
+  try {
+    await httpsCallable(functions, fnName)(args);
+  } catch (error) {
+    console.warn(`[firebase-mirror] ${fnName} failed:`, error);
+  }
+}
 
 export interface EventDocument {
   id: string;
@@ -41,11 +55,14 @@ export const useAddEvent = () => {
       endDate: string;
       platform: string;
     }) => {
-      return request('/api/events', {
+      const id = crypto.randomUUID();
+      const result = await request('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'add', ...event }),
+        body: JSON.stringify({ action: 'add', id, ...event }),
       });
+      void mirrorCallable('addEvent', { id, ...event });
+      return result;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['events'] }),
   });
@@ -63,11 +80,13 @@ export const useUpdateEvent = () => {
       endDate?: string;
       platform?: string;
     }) => {
-      return request('/api/events', {
+      const result = await request('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'update', ...event }),
       });
+      void mirrorCallable('updateEvent', event);
+      return result;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['events'] }),
   });
@@ -77,11 +96,13 @@ export const useDeleteEvent = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ eventId }: { eventId: string }) => {
-      return request('/api/events', {
+      const result = await request('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete', eventId }),
       });
+      void mirrorCallable('deleteEvent', { eventId });
+      return result;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['events'] }),
   });

@@ -15,6 +15,33 @@ import {
 } from '@/components/ui/dialog';
 import { fetchOnDemandShowById, fetchOnDemandSeasonEpisodes } from '@/lib/queries';
 import { useAuth } from '@/context/AuthContext';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app } from '../../../lib/firebase';
+
+const functionsEu = getFunctions(app, 'europe-west1');
+
+// Best-effort mirror of on-demand season/episode CRUD to Firebase (Firestore)
+// while migrating. The mesh (Supabase) write is authoritative; failures logged.
+const ON_DEMAND_FIREBASE_MIRROR: Record<string, string> = {
+  updateShow: 'updateOnDemandShow',
+  deleteShow: 'deleteOnDemandShow',
+  createSeason: 'createOnDemandSeason',
+  updateSeason: 'updateOnDemandSeason',
+  deleteSeason: 'deleteOnDemandSeason',
+  updateEpisode: 'updateOnDemandEpisode',
+  deleteEpisode: 'deleteOnDemandEpisode',
+  createSfxEpisode: 'createSfxEpisode',
+};
+
+async function mirrorOnDemand(action: string, body: Record<string, unknown>) {
+  const fnName = ON_DEMAND_FIREBASE_MIRROR[action];
+  if (!fnName) return;
+  try {
+    await httpsCallable(functionsEu, fnName)(body);
+  } catch (error) {
+    console.warn(`[firebase-mirror] ${fnName} failed:`, error);
+  }
+}
 
 /** Call an on-demand admin operation via the server-side proxy. */
 async function ondemandProxy(action: string, body: Record<string, unknown> = {}) {
@@ -27,6 +54,7 @@ async function ondemandProxy(action: string, body: Record<string, unknown> = {})
   if (!res.ok) {
     throw new Error(data?.error || `On-demand ${action} failed (${res.status})`);
   }
+  void mirrorOnDemand(action, body);
   return data;
 }
 
@@ -182,6 +210,17 @@ export default function ShowDetailPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
 
+  // Multi-select for bulk publish/unpublish/delete of episodes.
+  const [selectedEpisodeIds, setSelectedEpisodeIds] = useState<string[]>([]);
+
+  const toggleEpisodeSelection = (id: string) => {
+    setSelectedEpisodeIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const clearEpisodeSelection = () => setSelectedEpisodeIds([]);
+
   const { data: show, isLoading, error } = useQuery<Show>({
     queryKey: ['show', showId],
     queryFn: () => fetchOnDemandShowById(showId),
@@ -256,6 +295,7 @@ export default function ShowDetailPage() {
   const handleSelectSeason = async (seasonId: string) => {
     setSelectedSeason(seasonId);
     setLoadingEpisodes(true);
+    clearEpisodeSelection();
     try {
       const episodes = await fetchOnDemandSeasonEpisodes(showId, seasonId);
       setSeasonEpisodes(episodes.episodes || []);
@@ -293,16 +333,6 @@ export default function ShowDetailPage() {
     }
   };
 
-  const handleToggleEpisodePublish = async (episodeId: string, current: boolean) => {
-    try {
-      await ondemandProxy('updateEpisode', { showId, seasonId: selectedSeason, episodeId, updates: { published: !current } });
-      setSeasonEpisodes(prev => prev.map(e => e.id === episodeId ? { ...e, published: !current } : e));
-      queryClient.invalidateQueries({ queryKey: ['show', showId] });
-    } catch (err: any) {
-      alert('Failed to update episode: ' + err.message);
-    }
-  };
-
   const handleDeleteEpisode = async () => {
     if (!episodeToDelete) return;
     try {
@@ -312,6 +342,37 @@ export default function ShowDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['show', showId] });
     } catch (err: any) {
       alert('Failed to delete episode: ' + err.message);
+    }
+  };
+
+  const handleBulkPublish = async (published: boolean) => {
+    const ids = [...selectedEpisodeIds];
+    if (ids.length === 0) return;
+    try {
+      await Promise.all(ids.map((episodeId) =>
+        ondemandProxy('updateEpisode', { showId, seasonId: selectedSeason, episodeId, updates: { published } })
+      ));
+      setSeasonEpisodes(prev => prev.map(e => ids.includes(e.id) ? { ...e, published } : e));
+      queryClient.invalidateQueries({ queryKey: ['show', showId] });
+      clearEpisodeSelection();
+    } catch (err: any) {
+      alert('Failed to update episodes: ' + err.message);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedEpisodeIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Delete ${ids.length} episode${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    try {
+      await Promise.all(ids.map((episodeId) =>
+        ondemandProxy('deleteEpisode', { showId, seasonId: selectedSeason, episodeId })
+      ));
+      setSeasonEpisodes(prev => prev.filter(e => !ids.includes(e.id)));
+      queryClient.invalidateQueries({ queryKey: ['show', showId] });
+      clearEpisodeSelection();
+    } catch (err: any) {
+      alert('Failed to delete episodes: ' + err.message);
     }
   };
 
@@ -520,7 +581,25 @@ export default function ShowDetailPage() {
                 </div>
 
                 {selectedSeason === season.id && !loadingEpisodes && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pl-4">
+                  <div className="pl-4">
+                    {selectedEpisodeIds.length > 0 && (
+                      <div className="flex items-center gap-2 mb-3 p-3 rounded-lg bg-blue-600/20 border border-blue-500/30">
+                        <span className="text-sm text-white font-medium">{selectedEpisodeIds.length} selected</span>
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8" onClick={() => handleBulkPublish(true)}>
+                          Publish
+                        </Button>
+                        <Button size="sm" className="bg-yellow-600 hover:bg-yellow-700 text-white h-8" onClick={() => handleBulkPublish(false)}>
+                          Unpublish
+                        </Button>
+                        <Button size="sm" variant="destructive" className="h-8" onClick={handleBulkDelete}>
+                          Delete
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={clearEpisodeSelection} className="h-8 text-white">
+                          Clear
+                        </Button>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {seasonEpisodes.length > 0 ? (
                       seasonEpisodes.map((episode, idx) => {
                         const activeJob = matchSfxJob(episode, activeJobs);
@@ -531,7 +610,11 @@ export default function ShowDetailPage() {
                         return (
                         <div
                           key={episode.id}
-                          className="rounded-lg overflow-hidden bg-white/5 border border-white/10 hover:border-blue-500/50 hover:bg-white/10 transition group cursor-pointer"
+                          className={`rounded-lg overflow-hidden bg-white/5 border ${
+                            selectedEpisodeIds.includes(episode.id)
+                              ? 'border-blue-500/70 bg-blue-600/10'
+                              : 'border-white/10'
+                          } hover:border-blue-500/50 hover:bg-white/10 transition group cursor-pointer`}
                           onClick={() => { if (!isProcessing) handlePlayEpisode(episode); }}
                         >
                           <div className="relative aspect-video bg-gray-800 overflow-hidden">
@@ -604,20 +687,28 @@ export default function ShowDetailPage() {
 
                           <div className="p-4">
                             <div className="flex items-start justify-between gap-2">
-                              <h3 className="font-semibold text-white text-sm mb-1 line-clamp-2 flex-1">
-                                {idx + 1}. {episode.title}
-                              </h3>
                               <label
-                                className="shrink-0 flex items-center gap-1 text-xs text-white/50 cursor-pointer"
+                                className="shrink-0 flex items-center cursor-pointer pt-0.5"
                                 onClick={e => e.stopPropagation()}
                               >
                                 <input
                                   type="checkbox"
-                                  checked={episode.published !== false}
-                                  onChange={() => handleToggleEpisodePublish(episode.id, episode.published !== false)}
-                                  className="h-3 w-3 rounded border-gray-600 bg-white/10 text-blue-600"
+                                  checked={selectedEpisodeIds.includes(episode.id)}
+                                  onChange={() => toggleEpisodeSelection(episode.id)}
+                                  className="h-3.5 w-3.5 rounded border-gray-600 bg-white/10 text-blue-600"
+                                  title="Select"
                                 />
                               </label>
+                              <h3 className="font-semibold text-white text-sm mb-1 line-clamp-2 flex-1">
+                                {idx + 1}. {episode.title}
+                              </h3>
+                              <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full mt-0.5 ${
+                                episode.published !== false
+                                  ? 'bg-green-600/30 text-green-300'
+                                  : 'bg-white/10 text-white/40'
+                              }`}>
+                                {episode.published !== false ? 'PUBLISHED' : 'UNPUBLISHED'}
+                              </span>
                             </div>
                             {episode.description && (
                               <p className="text-xs text-gray-400 mb-3 line-clamp-2">
@@ -639,6 +730,7 @@ export default function ShowDetailPage() {
                         No episodes found for this season.
                       </div>
                     )}
+                  </div>
                   </div>
                 )}
               </div>

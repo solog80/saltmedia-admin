@@ -13,11 +13,17 @@ const OnDemandCard: React.FC<OnDemandCardProps> = ({ image, title, description, 
   return (
     <div className="frosted-glass overflow-hidden flex flex-col h-full group">
       <Link href={link} className="block relative aspect-video overflow-hidden">
-        <img
-          src={image}
-          alt={title}
-          className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105"
-        />
+        {image ? (
+          <img
+            src={image}
+            alt={title}
+            className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-blue-900/40 to-purple-900/40 flex items-center justify-center">
+            <span className="text-4xl opacity-40">🎬</span>
+          </div>
+        )}
       </Link>
       <div className="p-4 pb-2">
         <h3 className="text-lg line-clamp-1 text-white font-semibold">{title}</h3>

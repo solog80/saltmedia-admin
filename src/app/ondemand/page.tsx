@@ -41,7 +41,70 @@ import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
 import AddCircleIcon from '@hugeicons/core-free-icons/dist/esm/AddCircleIcon';
 
 const functions = getFunctions(app, 'us-central1');
+const functionsEu = getFunctions(app, 'europe-west1');
 const queryClient = new QueryClient();
+
+// Best-effort mirror of on-demand CRUD to Firebase (Firestore) while migrating.
+// The mesh (Supabase) write is authoritative; Firebase failures are logged.
+const ON_DEMAND_FIREBASE_MIRROR: Record<string, string> = {
+  createShow: 'createOnDemandShow',
+  updateShow: 'updateOnDemandShow',
+  deleteShow: 'deleteOnDemandShow',
+  createSfxEpisode: 'createSfxEpisode',
+  updateEpisode: 'updateOnDemandEpisode',
+};
+
+async function mirrorOnDemand(action: string, body: Record<string, unknown>, result?: any) {
+  const fnName = ON_DEMAND_FIREBASE_MIRROR[action];
+  if (!fnName) return;
+  const payload: Record<string, unknown> = { ...body };
+  // Inject the mesh-generated ids so the Firestore mirror uses the same ids.
+  if (action === 'createShow' && result?.show?.id) payload.id = result.show.id;
+  if (action === 'createShow' && result?.show?.bunnyGuid) payload.bunnyGuid = result.show.bunnyGuid;
+  if (action === 'createSfxEpisode' && result?.episode) {
+    if (result.episode.id) payload.id = result.episode.id;
+    if (result.episode.seasonId) payload.seasonId = result.episode.seasonId;
+  }
+  try {
+    await httpsCallable(functionsEu, fnName)(payload);
+  } catch (error) {
+    console.warn(`[firebase-mirror] ${fnName} failed:`, error);
+  }
+}
+
+// ─── Resumable Bunny uploads ─────────────────────────────────────────────
+// TUS uploads can be resumed from their current offset as long as we keep the
+// videoId + file metadata. Persist across reloads; the file itself must be
+// re-selected (File objects can't be stored) and resumes via the same videoId.
+interface PendingUpload {
+  videoId: string;
+  fileName: string;
+  fileType: string;
+  title: string;
+  description?: string;
+  showId: string;
+  seasonId?: string;
+  seasonTitle?: string;
+  startedAt: number;
+}
+
+const PENDING_KEY = 'bunnyPendingUploads';
+
+function loadPendingUploads(): PendingUpload[] {
+  try {
+    return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function persistPendingUploads(list: PendingUpload[]) {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(list));
+  } catch {
+    /* storage full / unavailable — resume within the session only */
+  }
+}
 
 /** Call an on-demand admin operation via the server-side proxy. */
 async function ondemandProxy(action: string, body: Record<string, unknown> = {}) {
@@ -54,6 +117,7 @@ async function ondemandProxy(action: string, body: Record<string, unknown> = {})
   if (!res.ok) {
     throw new Error(data?.error || `On-demand ${action} failed (${res.status})`);
   }
+  void mirrorOnDemand(action, body, data);
   return data;
 }
 
@@ -121,6 +185,24 @@ function OndemandContent() {
 
   // Upload server selection (Bunny CDN or SFX)
   const [uploadServer, setUploadServer] = useState<'bunny' | 'sfx'>('bunny');
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>(loadPendingUploads);
+  const fileRef = useRef<File | null>(null);
+
+  const addPendingUpload = (p: PendingUpload) => {
+    setPendingUploads(prev => {
+      const next = [...prev.filter(x => x.videoId !== p.videoId), p];
+      persistPendingUploads(next);
+      return next;
+    });
+  };
+
+  const removePendingUpload = (videoId: string) => {
+    setPendingUploads(prev => {
+      const next = prev.filter(x => x.videoId !== videoId);
+      persistPendingUploads(next);
+      return next;
+    });
+  };
   const [sfxStatusText, setSfxStatusText] = useState<string | null>(null);
   const [selectedSfxVideo, setSelectedSfxVideo] = useState<SfxVideo | null>(null);
   const [sfxSearch, setSfxSearch] = useState('');
@@ -224,6 +306,7 @@ function OndemandContent() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      fileRef.current = file;
       setVideoFile(file);
       setSelectedVideoFromBunny(null);
       setSelectedSfxVideo(null);
@@ -269,10 +352,29 @@ function OndemandContent() {
         const resp = await createTusUploadCallable({
           title: videoTitle,
           collectionId: selectedCollectionId,
+          bunnyCollectionId: selectedShow?.bunnyGuid || '',
         }) as any;
 
         videoId = resp.data.videoId;
+        if (!videoId) {
+          throw new Error('createTusUpload returned no videoId');
+        }
+        const tusVideoId: string = videoId;
         const { expirationTime, signature } = resp.data;
+
+        // Track this upload so it can be resumed if it fails.
+        fileRef.current = videoFile;
+        addPendingUpload({
+          videoId: tusVideoId,
+          fileName: videoFile.name,
+          fileType: videoFile.type || 'video/mp4',
+          title: videoTitle,
+          description: videoDescription,
+          showId: selectedCollectionId,
+          seasonId: newSeasonMode ? undefined : (selectedSeasonId || undefined),
+          seasonTitle: newSeasonMode ? (newSeasonTitle || undefined) : undefined,
+          startedAt: Date.now(),
+        });
 
         const upload = new tus.Upload(videoFile, {
           endpoint: "https://video.bunnycdn.com/tusupload",
@@ -280,27 +382,34 @@ function OndemandContent() {
           headers: {
             'AuthorizationSignature': signature,
             'AuthorizationExpire': expirationTime.toString(),
-            'VideoId': videoId,
+            'VideoId': tusVideoId,
             'LibraryId': '307069',
           },
           metadata: {
             filename: videoFile.name,
             filetype: videoFile.type,
             title: videoTitle,
-            collection: selectedCollectionId,
+            collection: selectedShow?.bunnyGuid || '',
           },
           onError: function (error) {
             console.error("Failed because: " + error);
-            alert("Upload failed: " + error);
             setIsUploading(false);
             setUploadProgress(0);
+            alert('Upload paused. Resume it from the pending uploads below.');
           },
           onProgress: function (bytesUploaded, bytesTotal) {
             const percentage = (bytesUploaded / bytesTotal * 100).toFixed(1);
             setUploadProgress(parseFloat(percentage));
           },
           onSuccess: async function () {
-            await createEpisode(videoId);
+            const ok = await createEpisode(tusVideoId, {
+              showId: selectedCollectionId,
+              title: videoTitle,
+              description: videoDescription,
+              seasonId: newSeasonMode ? undefined : (selectedSeasonId || undefined),
+              seasonTitle: newSeasonMode ? (newSeasonTitle || undefined) : undefined,
+            });
+            if (ok) removePendingUpload(tusVideoId);
           }
         });
 
@@ -309,7 +418,13 @@ function OndemandContent() {
       }
 
       // Selected existing video — skip TUS, create episode directly
-      await createEpisode(videoId!);
+      await createEpisode(videoId!, {
+        showId: selectedCollectionId,
+        title: videoTitle,
+        description: videoDescription,
+        seasonId: newSeasonMode ? undefined : (selectedSeasonId || undefined),
+        seasonTitle: newSeasonMode ? (newSeasonTitle || undefined) : undefined,
+      });
 
     } catch (error: any) {
       console.error('Error during upload process:', error);
@@ -544,23 +659,29 @@ function OndemandContent() {
     await createSfxEpisode(video.name, video.hlsUrl || '', duration, video.thumbUrl || '', videoTitle || video.name);
   };
 
-  const createEpisode = async (videoId: string) => {
+  const createEpisode = async (
+    videoId: string,
+    opts: { showId: string; title: string; description: string; seasonId?: string; seasonTitle?: string }
+  ): Promise<boolean> => {
     try {
       const createEpisodeCallable = httpsCallable(functions, 'createEpisodeFromBunnyUpload');
       const episodePayload: any = {
-        showId: selectedCollectionId,
+        showId: opts.showId,
         videoId: videoId,
-        title: videoTitle,
-        description: videoDescription,
+        title: opts.title,
+        description: opts.description,
       };
-      if (newSeasonMode && newSeasonTitle) {
-        episodePayload.seasonTitle = newSeasonTitle;
-      } else if (selectedSeasonId) {
-        episodePayload.seasonId = selectedSeasonId;
+      if (opts.seasonTitle) {
+        episodePayload.seasonTitle = opts.seasonTitle;
+      } else if (opts.seasonId) {
+        episodePayload.seasonId = opts.seasonId;
       }
       await createEpisodeCallable(episodePayload);
     } catch (episodeError) {
       console.error('Failed to create episode record:', episodeError);
+      setIsUploading(false);
+      setUploadProgress(0);
+      return false;
     }
     alert('Video added successfully!');
     setIsUploading(false);
@@ -575,6 +696,90 @@ function OndemandContent() {
       fileInputRef.current.value = '';
     }
     queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+    return true;
+  };
+
+  const resumeUpload = async (pending: PendingUpload) => {
+    const file = fileRef.current;
+    if (!file) {
+      alert(`Please re-select the file "${pending.fileName}" (the same file) to resume it.`);
+      return;
+    }
+    setIsUploading(true);
+    setUploadProgress(0);
+    try {
+      const resumeCallable = httpsCallable(functions, 'resumeTusUpload');
+      const resp = await resumeCallable({ videoId: pending.videoId }) as any;
+      const { expirationTime, signature } = resp.data;
+
+      const upload = new tus.Upload(file, {
+        // Bunny's TUS upload URL uses the videoId WITHOUT dashes.
+        uploadUrl: `https://video.bunnycdn.com/tusupload/${pending.videoId.replace(/-/g, '')}`,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        headers: {
+          'AuthorizationSignature': signature,
+          'AuthorizationExpire': expirationTime.toString(),
+          'VideoId': pending.videoId,
+          'LibraryId': '307069',
+        },
+        metadata: {
+          filename: pending.fileName,
+          filetype: pending.fileType,
+          title: pending.title,
+          collection: '',
+        },
+        onError: function (error) {
+          console.error('Resume failed:', error);
+          const msg = error?.message || String(error);
+          const code = msg.match(/response code: (\d+)/)?.[1];
+          if (code === '404') {
+            // The Bunny TUS session is gone — the video finished uploading.
+            // Create the episode record; keep the pending entry if the video
+            // isn't actually processed yet.
+            console.warn('[resumeUpload] upload session gone, finalizing episode:', pending.videoId);
+            createEpisode(pending.videoId, {
+              showId: pending.showId,
+              title: pending.title,
+              description: pending.description || '',
+              seasonId: pending.seasonId,
+              seasonTitle: pending.seasonTitle,
+            }).then((ok) => {
+              if (ok) {
+                removePendingUpload(pending.videoId);
+              } else {
+                setIsUploading(false);
+                setUploadProgress(0);
+                alert('The video isn\'t fully processed yet. You can try Resume again later, or Discard and re-upload.');
+              }
+            });
+            return;
+          }
+          setIsUploading(false);
+          setUploadProgress(0);
+          alert('Upload paused. You can resume it again from pending uploads.');
+        },
+        onProgress: function (bytesUploaded, bytesTotal) {
+          const percentage = (bytesUploaded / bytesTotal * 100).toFixed(1);
+          setUploadProgress(parseFloat(percentage));
+        },
+        onSuccess: async function () {
+          const ok = await createEpisode(pending.videoId, {
+            showId: pending.showId,
+            title: pending.title,
+            description: pending.description || '',
+            seasonId: pending.seasonId,
+            seasonTitle: pending.seasonTitle,
+          });
+          if (ok) removePendingUpload(pending.videoId);
+        },
+      });
+      upload.start();
+    } catch (e: any) {
+      console.error('Resume setup failed:', e);
+      setIsUploading(false);
+      setUploadProgress(0);
+      alert('Failed to resume upload: ' + (e?.message || e));
+    }
   };
 
   const handleCreateShow = async () => {
@@ -1034,6 +1239,39 @@ function OndemandContent() {
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
+            </div>
+          )}
+
+          {pendingUploads.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-white/80">Pending uploads</h3>
+              {pendingUploads.map((p) => (
+                <div key={p.videoId} className="bg-white/5 border border-amber-500/30 rounded-lg p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm text-white font-medium truncate">{p.fileName}</div>
+                      <div className="text-xs text-white/50">→ {p.title} (started {new Date(p.startedAt).toLocaleString()})</div>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        onClick={() => resumeUpload(p)}
+                        className="bg-amber-600 hover:bg-amber-700 text-white h-8"
+                      >
+                        Resume
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => removePendingUpload(p.videoId)}
+                        className="h-8"
+                      >
+                        Discard
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 

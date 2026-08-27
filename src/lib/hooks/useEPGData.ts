@@ -1,4 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app } from '../firebase';
+
+const functions = getFunctions(app, 'europe-west1');
 
 interface Program {
   programName: string;
@@ -42,6 +46,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+// Best-effort mirror to Firebase (Firestore) while migrating. The mesh
+// (Supabase) write is authoritative; Firebase failures are logged, not fatal.
+async function mirrorCallable(fnName: string, args: unknown) {
+  try {
+    await httpsCallable(functions, fnName)(args);
+  } catch (error) {
+    console.warn(`[firebase-mirror] ${fnName} failed:`, error);
+  }
+}
+
 export const useEPGData = () => {
   return useQuery({
     queryKey: ['epgData'],
@@ -57,11 +71,13 @@ export const useAddProgram = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ stationName, program }: { stationName: string; program: any }) => {
-      return request('/api/epg', {
+      const result = await request('/api/epg', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'addProgram', stationName, program }),
       });
+      void mirrorCallable('addEPGProgram', { stationName, program });
+      return result;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['epgData'] }),
   });
@@ -85,11 +101,13 @@ export const useUpdateProgram = () => {
       days?: string;
       startTime?: string;
     }) => {
-      return request('/api/epg', {
+      const result = await request('/api/epg', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'updateProgram', stationName, programIndex, updates, programName, days, startTime }),
       });
+      void mirrorCallable('updateEPGProgram', { stationName, programIndex, updates, programName, days, startTime });
+      return result;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['epgData'] }),
   });
@@ -111,11 +129,13 @@ export const useDeleteProgram = () => {
       days?: string;
       startTime?: string;
     }) => {
-      return request('/api/epg', {
+      const result = await request('/api/epg', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'deleteProgram', stationName, programIndex, programName, days, startTime }),
       });
+      void mirrorCallable('deleteEPGProgram', { stationName, programIndex, programName, days, startTime });
+      return result;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['epgData'] }),
   });
