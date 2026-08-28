@@ -6,7 +6,7 @@ import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
 import Tv01Icon from '@hugeicons/core-free-icons/dist/esm/Tv01Icon';
 import Logout01Icon from '@hugeicons/core-free-icons/dist/esm/Logout01Icon';
-import { Calendar, Zap, DollarSign, Radio, BarChart3, Play, Image as ImageIcon, RadioTower } from 'lucide-react';
+import { Calendar, Zap, DollarSign, Radio, BarChart3, Play, Image as ImageIcon, RadioTower, Bell } from 'lucide-react';
 
 const Sidebar = () => {
   return (
@@ -109,12 +109,19 @@ const Sidebar = () => {
           <RadioTower size={20} />
           Broadcast
         </Link>
-        <Link
+<Link
           href="/ads"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
         >
           <Play size={20} />
-          Advertisements
+          Ads
+        </Link>
+        <Link
+          href="/notifications"
+          className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
+        >
+          <Bell size={20} />
+          Notifications
         </Link>
       </nav>
       <div

@@ -2,8 +2,6 @@
 
 import React, { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -55,15 +53,6 @@ interface CreateUserPayload {
   role: string;
 }
 
-const getUsersPaginated = httpsCallable<{
-  lastVisibleId?: string;
-  searchTerm?: string;
-}, GetUsersPaginatedResponse>(functions, 'getUsersPaginated');
-
-const updateUserRoleCallable = httpsCallable<UpdateUserRolePayload, { message: string }>(functions, 'updateUserRole');
-
-const createUserCallable = httpsCallable<CreateUserPayload, { message: string }>(functions, 'createUser');
-
 const UserManagementPage = () => {
   const queryClient = useQueryClient();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -80,8 +69,11 @@ const UserManagementPage = () => {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error } = useInfiniteQuery<GetUsersPaginatedResponse, Error>({
     queryKey: ['users', searchTerm],
     queryFn: async ({ pageParam }) => {
-      const result = await getUsersPaginated({ lastVisibleId: pageParam as string | undefined, searchTerm });
-      return result.data;
+      const params = new URLSearchParams();
+      if (pageParam) params.set('lastVisibleId', pageParam as string);
+      if (searchTerm) params.set('searchTerm', searchTerm);
+      const res = await fetch(`/api/users?${params.toString()}`);
+      return await res.json();
     },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextPageToken,
@@ -92,8 +84,12 @@ const UserManagementPage = () => {
     message: string;
   }, Error, UpdateUserRolePayload>({
     mutationFn: async (payload) => {
-      const result = await updateUserRoleCallable(payload);
-      return result.data;
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'updateUserRole', ...payload }),
+      });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users', searchTerm] });
@@ -111,8 +107,12 @@ const UserManagementPage = () => {
     message: string;
   }, Error, CreateUserPayload>({
     mutationFn: async (payload) => {
-      const result = await createUserCallable(payload);
-      return result.data;
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'createUser', ...payload }),
+      });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users', searchTerm] });
