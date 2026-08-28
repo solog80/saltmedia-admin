@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, Plus, Send, Loader2, Search, Check, Image as ImageIcon, Globe, Signal, Wifi, BatteryFull, Tv } from 'lucide-react';
+import { Bell, Plus, Send, Loader2, Search, Check, Image as ImageIcon, Globe, Signal, Wifi, BatteryFull, Tv, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -50,6 +50,7 @@ export default function NotificationsPage() {
   const [target, setTarget] = useState<NotificationTarget>('all');
   const [userId, setUserId] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [userResults, setUserResults] = useState<any[]>([]);
   const [selectedContentKey, setSelectedContentKey] = useState('');
   const [title, setTitle] = useState('');
@@ -58,6 +59,8 @@ export default function NotificationsPage() {
   const [imageUrl, setImageUrl] = useState('');
   const [link, setLink] = useState('');
   const [isFetchingMeta, setIsFetchingMeta] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
 
   // Sent log
   const { data, isLoading, isError } = useQuery<{ notifications: SentNotification[] }>({
@@ -185,6 +188,56 @@ export default function NotificationsPage() {
     }
   };
 
+  const resizeImageToJpeg = (file: File, maxDim: number): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('canvas unsupported'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('invalid image'));
+      };
+      img.src = url;
+    });
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const base64 = await resizeImageToJpeg(file, 1600);
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'uploadImage', imageBase64: base64 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Upload failed');
+      setImageUrl(data.url);
+    } catch (err: any) {
+      alert('Image upload failed: ' + (err?.message || err));
+    } finally {
+      setUploadingImage(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   const handleSend = () => {
     if (!title.trim() || !message.trim()) {
       setError('Title and message are required.');
@@ -256,7 +309,7 @@ export default function NotificationsPage() {
                     <SelectTrigger className="w-full h-9 bg-white/10 border-white/20 text-white">
                       <SelectValue placeholder={contentOptionsQuery.isLoading ? 'Loading shows...' : 'Pick a show or event...'} />
                     </SelectTrigger>
-                    <SelectContent className="bg-white/10 backdrop-blur-xl border-white/20 text-white max-h-72">
+                    <SelectContent className="bg-neutral-900 border-white/20 text-white max-h-72">
                       {contentOptionsQuery.data?.length ? (
                         contentOptionsQuery.data.map((c: any) => (
                           <SelectItem key={c.key} value={c.key}>
@@ -284,7 +337,7 @@ export default function NotificationsPage() {
                     <SelectTrigger className="w-full h-9 bg-white/10 border-white/20 text-white">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-white/10 backdrop-blur-xl border-white/20 text-white">
+                    <SelectContent className="bg-neutral-900 border-white/20 text-white">
                       <SelectItem value="all">Everyone (Broadcast)</SelectItem>
                       <SelectItem value="individual">Individual User</SelectItem>
                     </SelectContent>
@@ -296,17 +349,20 @@ export default function NotificationsPage() {
                     <Label className="text-white/80 text-xs">Recipient User</Label>
                     <Input
                       value={userSearch}
-                      onChange={(e) => setUserSearch(e.target.value)}
+                      onFocus={() => setSearchOpen(true)}
+                      onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+                      onChange={(e) => { setUserSearch(e.target.value); setSearchOpen(true); }}
                       placeholder="Search by name or email..."
                       className="h-9 bg-white/10 border-white/20 text-white placeholder-white/40"
                     />
-                    {userSearchQuery.data?.users?.length ? (
-                      <div className="absolute z-20 w-full mt-1 bg-white/10 backdrop-blur-xl border border-white/20 rounded-md shadow-xl max-h-60 overflow-y-auto">
+                    {searchOpen && userSearchQuery.data?.users?.length ? (
+                      <div className="absolute z-20 w-full mt-1 bg-neutral-900 border border-white/20 rounded-md shadow-xl max-h-60 overflow-y-auto">
                         {userSearchQuery.data.users.map((u: any) => (
                           <div
                             key={u.id}
                             className="flex items-center gap-3 p-2 hover:bg-white/10 cursor-pointer transition"
-                            onClick={() => { setUserId(u.id); setUserSearch(u.email || u.name || u.id); }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { setUserId(u.id); setUserSearch(u.email || u.name || u.id); setSearchOpen(false); }}
                           >
                             <div className="h-8 w-8 rounded-full bg-blue-600/40 flex items-center justify-center text-white font-semibold text-xs">
                               {(u.name || 'U')[0]?.toUpperCase()}
@@ -340,7 +396,7 @@ export default function NotificationsPage() {
                       <SelectTrigger className="w-full h-9 bg-white/10 border-white/20 text-white">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-white/10 backdrop-blur-xl border-white/20 text-white">
+                      <SelectContent className="bg-neutral-900 border-white/20 text-white">
                         <SelectItem value="info">Blue (Information)</SelectItem>
                         <SelectItem value="success">Green (Announcement)</SelectItem>
                         <SelectItem value="warning">Orange (Alert)</SelectItem>
@@ -351,7 +407,19 @@ export default function NotificationsPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-white/80 text-xs">Image URL</Label>
-                    <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className="h-9 bg-white/10 border-white/20 text-white placeholder-white/40" />
+                    <div className="flex items-center gap-2">
+                      <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className="h-9 flex-1 bg-white/10 border-white/20 text-white placeholder-white/40" />
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() => imageFileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                      >
+                        {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload
+                      </Button>
+                      <input ref={imageFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                    </div>
                   </div>
                 </div>
 
