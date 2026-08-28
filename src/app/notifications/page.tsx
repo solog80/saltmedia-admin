@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bell, Plus, Send, Loader2, Search, Check, Image as ImageIcon, Globe, Signal, Wifi, BatteryFull, Tv, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,8 @@ interface SentNotification {
   user_id?: string | null;
   is_broadcast: boolean;
   recipients: number;
+  sent?: number;
+  status?: string;
   created_at: string;
 }
 
@@ -36,6 +38,12 @@ const TYPE_COLORS: Record<string, string> = {
   warning: 'bg-amber-500',
   error: 'bg-red-500',
   broadcast: 'bg-slate-500',
+};
+
+const STATUS_UI: Record<string, { label: string; className: string; dot: string }> = {
+  sending: { label: 'Sending…', className: 'bg-amber-500/15 text-amber-300 border-amber-500/40', dot: 'bg-amber-400 animate-pulse' },
+  sent: { label: 'Sent', className: 'bg-green-500/15 text-green-300 border-green-500/40', dot: 'bg-green-400' },
+  failed: { label: 'Failed', className: 'bg-red-500/15 text-red-300 border-red-500/40', dot: 'bg-red-400' },
 };
 
 const safeImgUrl = (u?: string) => (u && u.includes(' ') ? encodeURI(u) : u);
@@ -63,7 +71,7 @@ export default function NotificationsPage() {
   const imageFileInputRef = useRef<HTMLInputElement>(null);
 
   // Sent log
-  const { data, isLoading, isError } = useQuery<{ notifications: SentNotification[] }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ notifications: SentNotification[] }>({
     queryKey: ['sentNotifications'],
     queryFn: async () => {
       const res = await fetch('/api/notifications');
@@ -71,6 +79,16 @@ export default function NotificationsPage() {
     },
     staleTime: 1000 * 30,
   });
+
+  // Poll every few seconds while a broadcast is still sending, so the status
+  // badge flips to Sent/Failed live without a manual refresh.
+  const notifications = data?.notifications || [];
+  const broadcasting = notifications.some((n) => n.status === 'sending');
+  useEffect(() => {
+    if (!broadcasting) return;
+    const t = setInterval(() => refetch(), 3000);
+    return () => clearInterval(t);
+  }, [broadcasting, refetch]);
 
   // User search (individual target)
   const userSearchQuery = useQuery({
@@ -157,7 +175,11 @@ export default function NotificationsPage() {
     },
     onSuccess: (data) => {
       setDialogOpen(false);
-      setSuccess(`Notification sent to ${data.recipients} device${data.recipients === 1 ? '' : 's'}`);
+      if (data?.queued) {
+        setSuccess(`Broadcast queued — delivering to all devices in the background`);
+      } else {
+        setSuccess(`Notification sent to ${data.recipients} device${data.recipients === 1 ? '' : 's'}`);
+      }
       setTimeout(() => setSuccess(null), 4000);
       queryClient.invalidateQueries({ queryKey: ['sentNotifications'] });
       setTitle(''); setMessage(''); setType('info'); setImageUrl(''); setLink(''); setUserId(''); setUserSearch(''); setSelectedContentKey('');
@@ -258,8 +280,6 @@ export default function NotificationsPage() {
       userId: target === 'individual' ? userId : undefined,
     });
   };
-
-  const notifications = data?.notifications || [];
 
   return (
     <div className="p-6 space-y-6">
@@ -445,7 +465,7 @@ export default function NotificationsPage() {
 
                 <div className="flex justify-end gap-2 pt-1">
                   <Button variant="outline" size="sm" onClick={() => setDialogOpen(false)} className="text-white border-white/20">Cancel</Button>
-                  <Button size="sm" onClick={handleSend} disabled={sendMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  <Button size="sm" onClick={handleSend} disabled={sendMutation.isPending || (target === 'all' && broadcasting)} className="bg-blue-600 hover:bg-blue-700 text-white" title={target === 'all' && broadcasting ? 'A broadcast is already in progress' : undefined}>
                     {sendMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                     {target === 'all' ? 'Broadcast' : 'Send'}
                   </Button>
@@ -518,7 +538,15 @@ export default function NotificationsPage() {
       {/* Sent log */}
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-3">
-          <CardTitle className="text-white text-lg">Sent History</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-white text-lg">Sent History</CardTitle>
+            {broadcasting && (
+              <span className="inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-300">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Broadcast in progress
+              </span>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -526,31 +554,34 @@ export default function NotificationsPage() {
               <TableHeader>
                 <TableRow className="border-white/10">
                   <TableHead className="text-white/60">Title</TableHead>
+                  <TableHead className="text-white/60">Status</TableHead>
                   <TableHead className="text-white/60">Type</TableHead>
                   <TableHead className="text-white/60">Target</TableHead>
                   <TableHead className="text-white/60 text-right">Recipients</TableHead>
-                  <TableHead className="text-white/60 text-right">Sent</TableHead>
+                  <TableHead className="text-white/60 text-right">Delivered</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 4 }).map((_, i) => (
                     <TableRow key={i} className="border-white/5">
-                      <TableCell colSpan={5}><Skeleton className="h-10 w-full" /></TableCell>
+                      <TableCell colSpan={6}><Skeleton className="h-10 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : isError ? (
                   <TableRow className="border-white/5">
-                    <TableCell colSpan={5} className="text-white/60 text-center py-8">Failed to load sent notifications.</TableCell>
+                    <TableCell colSpan={6} className="text-white/60 text-center py-8">Failed to load sent notifications.</TableCell>
                   </TableRow>
                 ) : notifications.length === 0 ? (
                   <TableRow className="border-white/5">
-                    <TableCell colSpan={5} className="text-white/40 text-center py-10">
+                    <TableCell colSpan={6} className="text-white/40 text-center py-10">
                       No notifications sent yet.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  notifications.map((n) => (
+                  notifications.map((n) => {
+                    const st = STATUS_UI[n.status || 'sent'] || STATUS_UI.sent;
+                    return (
                     <TableRow key={n.id} className="border-white/5">
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -558,15 +589,23 @@ export default function NotificationsPage() {
                           <div className="min-w-0">
                             <p className="text-sm text-white font-medium truncate">{n.title}</p>
                             <p className="text-xs text-white/50 line-clamp-1">{n.message}</p>
+                            <p className="text-[10px] text-white/30">{new Date(n.created_at).toLocaleString()}</p>
                           </div>
                         </div>
                       </TableCell>
+                      <TableCell>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${st.className}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
+                          {st.label}
+                        </span>
+                      </TableCell>
                       <TableCell><Badge className={`${TYPE_COLORS[n.type] || TYPE_COLORS.info} text-white`}>{n.type}</Badge></TableCell>
                       <TableCell className="text-white/60 text-sm">{n.is_broadcast ? 'Everyone' : 'Individual'}</TableCell>
-                      <TableCell className="text-white/70 text-right">{n.recipients}</TableCell>
-                      <TableCell className="text-white/50 text-right whitespace-nowrap text-sm">{new Date(n.created_at).toLocaleString()}</TableCell>
+                      <TableCell className="text-white/70 text-right">{n.recipients || 0}</TableCell>
+                      <TableCell className="text-white/70 text-right">{n.status === 'sent' ? n.sent ?? 0 : '—'}</TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
