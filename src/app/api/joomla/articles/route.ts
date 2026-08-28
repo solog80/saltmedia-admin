@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
+import { joomlaFetchCached, invalidateJoomlaCache } from "@/lib/joomla-cache"
 
 const JOOMLA_API_URL = process.env.JOOMLA_API_URL || "https://saltmedia.ug/api/index.php/v1"
 const JOOMLA_API_USERNAME = process.env.JOOMLA_API_USERNAME || ""
 const JOOMLA_API_PASSWORD = process.env.JOOMLA_API_PASSWORD || ""
+const ARTICLES_TTL_MS = 60_000
 
 function authHeader(): string {
   const token = Buffer.from(`${JOOMLA_API_USERNAME}:${JOOMLA_API_PASSWORD}`).toString("base64")
@@ -35,21 +37,19 @@ export async function GET(request: NextRequest) {
     params.set("sort", "-created")
 
     const url = `${JOOMLA_API_URL}/content/articles?${params.toString()}`
-    const response = await fetch(url, {
-      headers: {
-        Authorization: authHeader(),
-        Accept: "application/vnd.api+json",
-      },
-      cache: "no-store",
-    })
+    const { status, body } = await joomlaFetchCached(url, {
+      Authorization: authHeader(),
+      Accept: "application/vnd.api+json",
+    }, ARTICLES_TTL_MS)
 
-    const body = await response.json()
-
-    if (!response.ok) {
-      return NextResponse.json({ error: body.errors?.[0]?.title || "Failed to fetch articles" }, { status: response.status })
+    if (!(status >= 200 && status < 300)) {
+      const msg = (body as any)?.errors?.[0]?.title || "Failed to fetch articles"
+      return NextResponse.json({ error: msg }, { status })
     }
 
-    return NextResponse.json(body)
+    return NextResponse.json(body, {
+      headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=300" },
+    })
   } catch (e) {
     console.error("JOOMLA articles GET error", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
@@ -117,6 +117,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: body.errors?.[0]?.title || "Failed to create article" }, { status: response.status })
     }
 
+    invalidateJoomlaCache(`${JOOMLA_API_URL}/content/articles`)
     return NextResponse.json(body, { status: 201 })
   } catch (e) {
     console.error("JOOMLA articles POST error", e)
