@@ -110,10 +110,17 @@ export default function NewsPage() {
             Create, edit and publish articles on saltmedia.ug
           </p>
         </div>
-        <Button onClick={() => router.push("/news/new")} className="self-start">
-          <Plus size={16} />
-          New Article
-        </Button>
+        <div className="flex items-center gap-2 self-start">
+          <a href="https://saltmedia.ug" target="_blank" rel="noopener noreferrer">
+            <Button variant="outline" className="text-white border-white/20 hover:bg-white/10">
+              Preview site
+            </Button>
+          </a>
+          <Button onClick={() => router.push("/news/new")}>
+            <Plus size={16} />
+            New Article
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
