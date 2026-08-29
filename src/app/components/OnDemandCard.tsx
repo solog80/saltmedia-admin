@@ -29,7 +29,7 @@ const OnDemandCard: React.FC<OnDemandCardProps> = ({ image, title, description, 
         <h3 className="text-lg line-clamp-1 text-white font-semibold">{title}</h3>
       </div>
       <div className="p-4 pt-0 flex-grow">
-        <p className="text-sm text-white/70 line-clamp-2">
+        <p className="text-sm text-white/90 line-clamp-2">
           {description}
         </p>
       </div>

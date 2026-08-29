@@ -1365,27 +1365,25 @@ function OndemandContent() {
                 description={item.description}
                 link={`/ondemand/${item.id}`}
               />
-              <div className="absolute top-2 right-2 flex gap-1">
-                <Button
-                  size="icon"
-                  variant="secondary"
-                  className="size-8 bg-blue-600/80 hover:bg-blue-700 text-white"
+<div className="absolute top-2 right-2 flex gap-1">
+                <button
+                  className="flex size-8 items-center justify-center rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                   onClick={() => handleOpenEditDialog(item)}
+                  title="Edit"
                 >
-                  <HugeiconsIcon icon={PencilEdit01Icon} size={16} />
-                </Button>
+                  <HugeiconsIcon icon={PencilEdit01Icon} size={16} color="white" />
+                </button>
                 {!isModerator && (
-                  <Button
-                    size="icon"
-                    variant="destructive"
-                    className="size-8 bg-red-600/80 hover:bg-red-700 text-white"
+                  <button
+                    className="flex size-8 items-center justify-center rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors"
                     onClick={() => {
                       setVideoToDelete(item);
                       setDeleteDialogOpen(true);
                     }}
+                    title="Delete"
                   >
-                    <HugeiconsIcon icon={Delete02Icon} size={16} />
-                  </Button>
+                    <HugeiconsIcon icon={Delete02Icon} size={16} color="white" />
+                  </button>
                 )}
               </div>
             </div>

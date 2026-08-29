@@ -221,12 +221,13 @@ export default function NewsPage() {
                     <TableCell className="text-white/70">{article.attributes.hits}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" title="Edit" onClick={() => router.push(`/news/${article.id}`)}>
+                        <Button variant="ghost" size="icon" className="text-white hover:text-black" title="Edit" onClick={() => router.push(`/news/${article.id}`)}>
                           <Edit size={14} />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="text-white hover:text-black"
                           title={article.attributes.state === 1 ? "Unpublish" : "Publish"}
                           onClick={() => handlePublishToggle(article)}
                         >
@@ -275,13 +276,13 @@ export default function NewsPage() {
                     {article.attributes.featured && <Star size={13} className="text-yellow-300" />}
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => router.push(`/news/${article.id}`)}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:text-black" title="Edit" onClick={() => router.push(`/news/${article.id}`)}>
                       <Edit size={14} />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8"
+                      className="h-8 w-8 text-white hover:text-black"
                       title={article.attributes.state === 1 ? "Unpublish" : "Publish"}
                       onClick={() => handlePublishToggle(article)}
                     >
