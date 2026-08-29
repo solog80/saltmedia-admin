@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Serif } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
-import Sidebar from './components/Sidebar';
+import SidebarShell from './components/SidebarShell';
 import { Providers } from './components/Providers';
 import { cn } from "@/lib/utils";
 
@@ -42,10 +42,9 @@ export default async function RootLayout({
         }}
       >
         <div className="absolute inset-0 bg-black/40 pointer-events-none" />
-        <Sidebar role={role} />
-        <div className="flex-1 overflow-y-auto relative z-10">
+        <SidebarShell role={role}>
           <Providers>{children}</Providers>
-        </div>
+        </SidebarShell>
       </body>
     </html>
   );
