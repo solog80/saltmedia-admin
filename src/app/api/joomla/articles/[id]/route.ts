@@ -1,110 +1,43 @@
-import { NextRequest, NextResponse } from "next/server"
-import { joomlaFetchCached, invalidateJoomlaCache } from "@/lib/joomla-cache"
+import { NextRequest, NextResponse } from "next/server";
 
-const JOOMLA_API_URL = process.env.JOOMLA_API_URL || "https://saltmedia.ug/api/index.php/v1"
-const JOOMLA_API_USERNAME = process.env.JOOMLA_API_USERNAME || ""
-const JOOMLA_API_PASSWORD = process.env.JOOMLA_API_PASSWORD || ""
-const ARTICLE_TTL_MS = 60_000
+const API_BASE = process.env.API_BASE_URL || '';
+const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
 
-function authHeader(): string {
-  const token = Buffer.from(`${JOOMLA_API_USERNAME}:${JOOMLA_API_PASSWORD}`).toString("base64")
-  return `Basic ${token}`
+/** Proxies single-article Joomla ops to the mesh (cached reads + writes w/ invalidation). */
+
+async function proxy(path: string, init: RequestInit = {}) {
+  const res = await fetch(`${API_BASE}/${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      ...init.headers,
+    },
+    cache: 'no-store',
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    return NextResponse.json(data || { error: `joomla article ${res.status}` }, { status: res.status });
+  }
+  return NextResponse.json(data);
 }
 
-type RouteContext = { params: Promise<{ id: string }> }
+type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteContext) {
-  try {
-    const { id } = await params
-    const url = `${JOOMLA_API_URL}/content/articles/${id}`
-    const { status, body } = await joomlaFetchCached(url, {
-      Authorization: authHeader(),
-      Accept: "application/vnd.api+json",
-    }, ARTICLE_TTL_MS)
-
-    if (!(status >= 200 && status < 300)) {
-      const msg = (body as any)?.errors?.[0]?.title || "Article not found"
-      return NextResponse.json({ error: msg }, { status })
-    }
-
-    return NextResponse.json(body, {
-      headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=300" },
-    })
-  } catch (e) {
-    console.error("JOOMLA article GET error", e)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
+  const { id } = await params;
+  return proxy(`getNewsArticle?id=${encodeURIComponent(id)}`);
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
-  try {
-    const { id } = await params
-    const patch = await request.json()
-
-    const response = await fetch(`${JOOMLA_API_URL}/content/articles/${id}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: authHeader(),
-        "Content-Type": "application/json",
-        Accept: "application/vnd.api+json",
-      },
-      body: JSON.stringify(patch),
-      cache: "no-store",
-    })
-
-    const body = await response.json()
-
-    if (!response.ok) {
-      return NextResponse.json({ error: body.errors?.[0]?.title || "Failed to update article" }, { status: response.status })
-    }
-
-    invalidateJoomlaCache(`${JOOMLA_API_URL}/content/articles`)
-    return NextResponse.json(body)
-  } catch (e) {
-    console.error("JOOMLA article PATCH error", e)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
+  const { id } = await params;
+  const body = await request.json();
+  return proxy(`updateJoomlaArticle?id=${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteContext) {
-  try {
-    const { id } = await params
-
-    // Joomla requires the article to be trashed (state=-2) before it can be deleted.
-    const trashResponse = await fetch(`${JOOMLA_API_URL}/content/articles/${id}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: authHeader(),
-        "Content-Type": "application/json",
-        Accept: "application/vnd.api+json",
-      },
-      body: JSON.stringify({ state: -2 }),
-      cache: "no-store",
-    })
-
-    if (!trashResponse.ok) {
-      const body = await trashResponse.json().catch(() => ({}))
-      return NextResponse.json({ error: body.errors?.[0]?.title || "Failed to trash article" }, { status: trashResponse.status })
-    }
-
-    const deleteResponse = await fetch(`${JOOMLA_API_URL}/content/articles/${id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: authHeader(),
-        Accept: "application/vnd.api+json",
-      },
-      cache: "no-store",
-    })
-
-    if (!deleteResponse.ok && deleteResponse.status !== 204) {
-      const body = await deleteResponse.json().catch(() => ({}))
-      return NextResponse.json({ error: body.errors?.[0]?.title || "Failed to delete article" }, { status: deleteResponse.status })
-    }
-
-    invalidateJoomlaCache(`${JOOMLA_API_URL}/content/articles`)
-    return NextResponse.json({ success: true })
-  } catch (e) {
-    console.error("JOOMLA article DELETE error", e)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
+  const { id } = await params;
+  return proxy(`deleteJoomlaArticle?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

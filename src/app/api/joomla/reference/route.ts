@@ -1,46 +1,24 @@
-import { NextRequest, NextResponse } from "next/server"
-import { joomlaFetchCached } from "@/lib/joomla-cache"
+import { NextRequest, NextResponse } from "next/server";
 
-const JOOMLA_API_URL = process.env.JOOMLA_API_URL || "https://saltmedia.ug/api/index.php/v1"
-const JOOMLA_API_USERNAME = process.env.JOOMLA_API_USERNAME || ""
-const JOOMLA_API_PASSWORD = process.env.JOOMLA_API_PASSWORD || ""
-const REFERENCE_TTL_MS = 5 * 60_000
+const API_BASE = process.env.API_BASE_URL || '';
+const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
 
-function authHeader(): string {
-  const token = Buffer.from(`${JOOMLA_API_USERNAME}:${JOOMLA_API_PASSWORD}`).toString("base64")
-  return `Basic ${token}`
-}
+/** Proxies Joomla reference data (categories/authors/tags) to the mesh (cached). */
 
 export async function GET(request: NextRequest) {
-  try {
-    const type = request.nextUrl.searchParams.get("type") || "categories"
-
-    let url = ""
-    if (type === "categories") {
-      url = `${JOOMLA_API_URL}/content/categories?filter[extension]=com_content&page[limit]=200&sort=title`
-    } else if (type === "authors") {
-      url = `${JOOMLA_API_URL}/users?page[limit]=200&sort=name`
-    } else if (type === "tags") {
-      url = `${JOOMLA_API_URL}/tags?page[limit]=200&sort=title`
-    } else {
-      return NextResponse.json({ error: "Unknown reference type" }, { status: 400 })
-    }
-
-    const { status, body } = await joomlaFetchCached(url, {
-      Authorization: authHeader(),
-      Accept: "application/vnd.api+json",
-    }, REFERENCE_TTL_MS)
-
-    if (!(status >= 200 && status < 300)) {
-      const msg = (body as any)?.errors?.[0]?.title || "Failed to fetch reference data"
-      return NextResponse.json({ error: msg }, { status })
-    }
-
-    return NextResponse.json(body, {
-      headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=600" },
-    })
-  } catch (e) {
-    console.error("JOOMLA reference GET error", e)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  const type = request.nextUrl.searchParams.get('type') || 'categories';
+  const res = await fetch(`${API_BASE}/getJoomlaReference?type=${encodeURIComponent(type)}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+    },
+    cache: 'no-store',
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    return NextResponse.json(data || { error: `joomla reference ${res.status}` }, { status: res.status });
   }
+  return NextResponse.json(data);
 }
