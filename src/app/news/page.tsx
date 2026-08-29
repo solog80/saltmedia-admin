@@ -101,21 +101,23 @@ export default function NewsPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 p-4 sm:space-y-6 sm:p-6">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">News Articles</h1>
-          <p className="mt-1 text-sm text-white/60">
+          <h1 className="text-2xl font-bold text-white sm:text-3xl">News Articles</h1>
+          <p className="mt-1 text-xs text-white/60 sm:text-sm">
             Create, edit and publish articles on saltmedia.ug
           </p>
         </div>
-        <Button onClick={() => router.push("/news/new")}>
+        <Button onClick={() => router.push("/news/new")} className="self-start">
           <Plus size={16} />
           New Article
         </Button>
       </div>
 
-      <div className="frosted-glass flex flex-col gap-3 p-4 md:flex-row md:items-center">
+      {/* Filters */}
+      <div className="frosted-glass flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
           <Input
@@ -138,7 +140,7 @@ export default function NewsPage() {
             setOffset(0)
           }}
         >
-          <SelectTrigger className="w-full md:w-48">
+          <SelectTrigger className="w-full sm:w-48">
             <SelectValue placeholder="All categories" />
           </SelectTrigger>
           <SelectContent>
@@ -157,7 +159,7 @@ export default function NewsPage() {
             setOffset(0)
           }}
         >
-          <SelectTrigger className="w-full md:w-40">
+          <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -169,14 +171,18 @@ export default function NewsPage() {
         </Select>
       </div>
 
-      <div className="frosted-glass overflow-hidden">
-        {articles.isLoading ? (
-          <div className="space-y-3 p-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        ) : (
+      {/* Loading skeleton */}
+      {articles.isLoading && (
+        <div className="space-y-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full sm:h-12" />
+          ))}
+        </div>
+      )}
+
+      {/* Desktop table */}
+      {!articles.isLoading && (articles.data?.data?.length ?? 0) > 0 && (
+        <div className="frosted-glass hidden overflow-hidden md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -240,21 +246,75 @@ export default function NewsPage() {
                   </TableRow>
                 )
               })}
-              {!articles.isLoading && (articles.data?.data?.length ?? 0) === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-white/40">
-                    No articles found
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
-        )}
-      </div>
+        </div>
+      )}
 
+      {/* Mobile cards */}
+      {!articles.isLoading && (articles.data?.data?.length ?? 0) > 0 && (
+        <div className="space-y-3 md:hidden">
+          {articles.data?.data?.map((article) => {
+            const badge = STATUS_BADGE[article.attributes.state] ?? STATUS_BADGE[0]
+            return (
+              <div key={article.id} className="frosted-glass rounded-lg p-3">
+                <div className="flex gap-3">
+                  <ArticleThumb article={article} />
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm font-medium text-white">{article.attributes.title}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/50">
+                      <span>{categoryTitle(article)}</span>
+                      <span>{authorName(article)}</span>
+                      {article.attributes.hits != null && <span>{article.attributes.hits} hits</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2">
+                  <div className="flex items-center gap-2">
+                    <Badge className={badge.className}>{badge.label}</Badge>
+                    {article.attributes.featured && <Star size={13} className="text-yellow-300" />}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => router.push(`/news/${article.id}`)}>
+                      <Edit size={14} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title={article.attributes.state === 1 ? "Unpublish" : "Publish"}
+                      onClick={() => handlePublishToggle(article)}
+                    >
+                      {article.attributes.state === 1 ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-red-400 hover:text-red-300"
+                      title="Delete"
+                      onClick={() => setDeleteTarget(article)}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!articles.isLoading && (articles.data?.data?.length ?? 0) === 0 && (
+        <div className="frosted-glass py-10 text-center text-sm text-white/40">
+          No articles found
+        </div>
+      )}
+
+      {/* Pagination */}
       {!articles.isLoading && (articles.data?.data?.length ?? 0) > 0 && (
         <div className="flex items-center justify-between text-sm text-white/60">
-          <span>
+          <span className="text-xs sm:text-sm">
             Showing {offset + 1}–{offset + (articles.data?.data?.length ?? 0)}
           </span>
           <div className="flex gap-2">
