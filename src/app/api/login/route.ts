@@ -25,12 +25,12 @@ export async function POST(req: NextRequest) {
 
     const role = decoded.role;
 
-    if (role !== 'admin' && role !== 'moderator') {
+    if (role !== 'admin' && role !== 'moderator' && role !== 'editor') {
       console.log('API login: Unauthorized role:', role);
-      return NextResponse.json({ message: 'Unauthorized - user role is not admin or moderator', role: role || 'none' }, { status: 403 });
+      return NextResponse.json({ message: 'Unauthorized - user role is not admin, moderator or editor', role: role || 'none' }, { status: 403 });
     }
 
-    const response = NextResponse.json({ message: 'Login successful', role: 'admin' });
+    const response = NextResponse.json({ message: 'Login successful', role });
     response.cookies.set('firebaseToken', idToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 
 const publicPaths = ['/login', '/api/login', '/_next', '/favicon.ico', '/Salt_Media_App_Logo.png', '/Dolmites.jpg', '/google.svg'];
 const moderatorAllowed = ['/ondemand', '/api', '/home', '/login', '/news'];
+const editorAllowed = ['/news', '/api', '/login'];
 
 function decodeToken(token: string) {
   try {
@@ -39,6 +40,13 @@ export async function middleware(request: NextRequest) {
     const allowed = moderatorAllowed.some(p => pathname.startsWith(p));
     if (!allowed) {
       return NextResponse.redirect(new URL('/ondemand', request.url));
+    }
+  }
+
+  if (role === 'editor') {
+    const allowed = editorAllowed.some(p => pathname.startsWith(p));
+    if (!allowed) {
+      return NextResponse.redirect(new URL('/news', request.url));
     }
   }
 

@@ -8,7 +8,8 @@ import Tv01Icon from '@hugeicons/core-free-icons/dist/esm/Tv01Icon';
 import Logout01Icon from '@hugeicons/core-free-icons/dist/esm/Logout01Icon';
 import { Calendar, Zap, DollarSign, Radio, BarChart3, Play, Image as ImageIcon, RadioTower, Bell, Newspaper } from 'lucide-react';
 
-const Sidebar = () => {
+const Sidebar = ({ role }: { role?: string | null }) => {
+  const isEditor = role === 'editor';
   return (
     <div
       className="flex flex-col w-64 text-white h-screen border-r"
@@ -25,6 +26,8 @@ const Sidebar = () => {
         <span className="text-xl font-bold tracking-tight text-white">SaltMedia Admin</span>
       </div>
       <nav className="flex-1 px-4 py-6 space-y-1">
+        {!isEditor && (
+          <>
         <Link
           href="/home"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
@@ -39,6 +42,8 @@ const Sidebar = () => {
           <HugeiconsIcon icon={UserGroupIcon} size={20} />
           User Management
         </Link>
+        </>
+        )}
         <Link
           href="/news"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
@@ -46,6 +51,8 @@ const Sidebar = () => {
           <Newspaper size={20} />
           News
         </Link>
+        {!isEditor && (
+          <>
         <Link
           href="/ondemand"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
@@ -130,6 +137,8 @@ const Sidebar = () => {
           <Bell size={20} />
           Notifications
         </Link>
+        </>
+        )}
       </nav>
       <div
         className="p-4 border-t"

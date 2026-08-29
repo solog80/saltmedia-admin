@@ -56,8 +56,8 @@ export default function LoginPage() {
         throw new Error(data.message || 'Unauthorized');
       }
 
-      console.log('Login successful, redirecting to /home');
-      router.push('/home');
+      console.log('Login successful, redirecting based on role:', data.role);
+      router.push(data.role === 'editor' ? '/news' : '/home');
     } catch (err: any) {
       setError(err.message || 'Login failed');
     } finally {
@@ -87,7 +87,8 @@ export default function LoginPage() {
         throw new Error(data.message || 'Unauthorized');
       }
 
-      router.push('/home');
+      console.log('Google login successful, redirecting based on role:', data.role);
+      router.push(data.role === 'editor' ? '/news' : '/home');
     } catch (err: any) {
       setError(err.message || 'Google sign-in failed');
     } finally {
