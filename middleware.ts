@@ -22,7 +22,8 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith('/login')) {
       const token = request.cookies.get('firebaseToken');
       if (token) {
-        return NextResponse.redirect(new URL('/home', request.url));
+        const decoded = decodeToken(token.value);
+        return NextResponse.redirect(new URL(decoded?.role === 'editor' ? '/news' : '/home', request.url));
       }
     }
     return NextResponse.next();

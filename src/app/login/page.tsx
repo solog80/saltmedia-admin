@@ -1,8 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
+import React, { useState } from 'react';
 import {
   signInWithEmailAndPassword,
   setPersistence,
@@ -19,14 +17,6 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const router = useRouter();
-  const { user } = useAuth();
-
-  useEffect(() => {
-    if (user && !loading) {
-      router.push('/home');
-    }
-  }, [user, loading, router]);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -57,7 +47,7 @@ export default function LoginPage() {
       }
 
       console.log('Login successful, redirecting based on role:', data.role);
-      router.push(data.role === 'editor' ? '/news' : '/home');
+      window.location.href = data.role === 'editor' ? '/news' : '/home';
     } catch (err: any) {
       setError(err.message || 'Login failed');
     } finally {
@@ -88,7 +78,7 @@ export default function LoginPage() {
       }
 
       console.log('Google login successful, redirecting based on role:', data.role);
-      router.push(data.role === 'editor' ? '/news' : '/home');
+      window.location.href = data.role === 'editor' ? '/news' : '/home';
     } catch (err: any) {
       setError(err.message || 'Google sign-in failed');
     } finally {

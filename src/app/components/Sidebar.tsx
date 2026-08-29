@@ -5,8 +5,8 @@ import UserGroupIcon from '@hugeicons/core-free-icons/dist/esm/UserGroupIcon';
 import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon';
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
 import Tv01Icon from '@hugeicons/core-free-icons/dist/esm/Tv01Icon';
-import Logout01Icon from '@hugeicons/core-free-icons/dist/esm/Logout01Icon';
 import { Calendar, Zap, DollarSign, Radio, BarChart3, Play, Image as ImageIcon, RadioTower, Bell, Newspaper } from 'lucide-react';
+import LogoutButton from './LogoutButton';
 
 const Sidebar = ({ role }: { role?: string | null }) => {
   const isEditor = role === 'editor';
@@ -144,13 +144,7 @@ const Sidebar = ({ role }: { role?: string | null }) => {
         className="p-4 border-t"
         style={{ borderColor: 'rgba(255, 255, 255, 0.2)' }}
       >
-        <Link
-          href="/login"
-          className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-all text-red-300 hover:bg-red-500/20 hover:text-red-200 rounded-md"
-        >
-          <HugeiconsIcon icon={Logout01Icon} size={20} />
-          Logout
-        </Link>
+        <LogoutButton />
       </div>
     </div>
   );
