@@ -17,6 +17,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import RichTextEditor from "@/app/components/news/RichTextEditor"
+import { categoryOptions, categoryDisplayLabel } from "@/lib/newsCategories"
 import {
   Select,
   SelectContent,
@@ -104,7 +105,7 @@ export default function ArticleForm({ articleId }: ArticleFormProps) {
     ? (categories.data?.find((c) => c.id === catid)?.attributes.title ?? catid)
     : ""
   const authorName = createdBy
-    ? (authors.data?.find((u) => String(u.id) === createdBy)?.attributes.name ?? createdBy)
+    ? (authors.data?.find((u) => String(u.id) === createdBy)?.attributes.name ?? existing?.attributes?.created_by_alias ?? createdBy)
     : ""
   const statusName = state ? (STATUS_LABELS[Number(state)] ?? state) : ""
 
@@ -123,6 +124,19 @@ export default function ArticleForm({ articleId }: ArticleFormProps) {
     setMetadesc(existing.attributes.metadesc ?? "")
     setMetakey(existing.attributes.metakey ?? "")
   }, [existing])
+
+  // When editing an article created with a created_by_alias, select the author
+  // whose name matches that alias (once the authors reference has loaded) so the
+  // form shows the real author instead of the API user.
+  useEffect(() => {
+    if (!existing || !authors.data) return
+    const alias = existing.attributes.created_by_alias
+    if (!alias) return
+    const byName = authors.data.find((u) => u.attributes.name === alias)
+    if (byName && createdBy === String(existing.attributes.created_by ?? "")) {
+      setCreatedBy(String(byName.id))
+    }
+  }, [existing, authors.data, createdBy])
 
   async function handleSave() {
     if (!title.trim()) {
@@ -156,6 +170,7 @@ export default function ArticleForm({ articleId }: ArticleFormProps) {
       metadesc,
       metakey,
       created_by: createdBy ? Number(createdBy) : undefined,
+      created_by_alias: authorName || undefined,
       publish_up: publishUp ? `${publishUp}:00` : undefined,
       language: "*",
     }
@@ -205,9 +220,9 @@ export default function ArticleForm({ articleId }: ArticleFormProps) {
                 <SelectValue placeholder="Select category">{categoryName}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {categories.data?.map((c) => (
-                  <SelectItem key={c.id} value={String(c.attributes.id)}>
-                    {c.attributes.title}
+                {categoryOptions(categories.data || []).map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {categoryDisplayLabel(c.label, c.depth)}
                   </SelectItem>
                 ))}
               </SelectContent>

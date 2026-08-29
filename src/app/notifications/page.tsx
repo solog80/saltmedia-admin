@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, Plus, Send, Loader2, Search, Check, Image as ImageIcon, Globe, Signal, Wifi, BatteryFull, Tv, Upload } from 'lucide-react';
+import { Bell, Plus, Send, Loader2, Search, Check, Image as ImageIcon, Globe, Signal, Wifi, BatteryFull, Tv, Upload, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -70,11 +71,16 @@ export default function NotificationsPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Pagination + selection
+  const [page, setPage] = useState(1);
+  const LIMIT = 10;
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   // Sent log
-  const { data, isLoading, isError, refetch } = useQuery<{ notifications: SentNotification[] }>({
-    queryKey: ['sentNotifications'],
+  const { data, isLoading, isError, refetch } = useQuery<{ notifications: SentNotification[]; total: number }>({
+    queryKey: ['sentNotifications', page],
     queryFn: async () => {
-      const res = await fetch('/api/notifications');
+      const res = await fetch(`/api/notifications?page=${page}&limit=${LIMIT}`);
       return await res.json();
     },
     staleTime: 1000 * 30,
@@ -83,6 +89,8 @@ export default function NotificationsPage() {
   // Poll every few seconds while a broadcast is still sending, so the status
   // badge flips to Sent/Failed live without a manual refresh.
   const notifications = data?.notifications || [];
+  const total = data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
   const broadcasting = notifications.some((n) => n.status === 'sending');
   useEffect(() => {
     if (!broadcasting) return;
@@ -189,6 +197,107 @@ export default function NotificationsPage() {
       setTimeout(() => setError(null), 5000);
     },
   });
+
+  const deleteNotificationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sentNotifications'] });
+      setSuccess('Notification removed');
+      setTimeout(() => setSuccess(null), 4000);
+    },
+    onError: (err: any) => {
+      setError(err?.message || 'Failed to delete notification');
+      setTimeout(() => setError(null), 5000);
+    },
+  });
+
+  const clearAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clearAll' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to clear');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sentNotifications'] });
+      setSelectedIds(new Set());
+      setSuccess('Sent history cleared');
+      setTimeout(() => setSuccess(null), 4000);
+    },
+    onError: (err: any) => {
+      setError(err?.message || 'Failed to clear notifications');
+      setTimeout(() => setError(null), 5000);
+    },
+  });
+
+  const deleteSelectedMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deleteMany', ids }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete');
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sentNotifications'] });
+      setSelectedIds(new Set());
+      setSuccess(`Deleted ${data?.deleted || 0} notification(s)`);
+      setTimeout(() => setSuccess(null), 4000);
+    },
+    onError: (err: any) => {
+      setError(err?.message || 'Failed to delete selected');
+      setTimeout(() => setError(null), 5000);
+    },
+  });
+
+  const handleDeleteNotification = (n: SentNotification) => {
+    if (window.confirm(`Delete "${n.title}" from the sent history?`)) {
+      deleteNotificationMutation.mutate(n.id);
+    }
+  };
+
+  const handleClearAll = () => {
+    if (window.confirm('Clear the entire sent history?')) {
+      clearAllMutation.mutate();
+    }
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleAll = () => {
+    if (selectedIds.size === notifications.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(notifications.map((n) => n.id)));
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (window.confirm(`Delete ${ids.length} selected notification(s)?`)) {
+      deleteSelectedMutation.mutate(ids);
+    }
+  };
 
   const fetchLinkMetadata = async () => {
     if (!link.startsWith('http')) return;
@@ -308,9 +417,9 @@ export default function NotificationsPage() {
           <DialogContent
             className="sm:max-w-6xl 2xl:max-w-7xl w-[min(95vw,1152px)] 2xl:w-[min(95vw,1280px)] max-h-[92vh] overflow-y-auto border-white/20 text-white"
             style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.08)',
-              backdropFilter: 'blur(10px)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              backdropFilter: 'blur(24px)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.35)',
             }}
           >
             <DialogHeader>
@@ -520,7 +629,7 @@ export default function NotificationsPage() {
                   <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-20 h-1 bg-white/25 rounded-full z-20" />
                 </div>
                 {link && (
-                  <Card className="border-white/10 bg-white/5">
+                  <Card className="border-white/15 bg-white/10 backdrop-blur-2xl">
                     <CardContent className="p-2.5">
                       <div className="flex items-center gap-2 text-[11px] text-white/60">
                         <Globe className="h-3 w-3 shrink-0" />
@@ -536,16 +645,47 @@ export default function NotificationsPage() {
       </div>
 
       {/* Sent log */}
-      <Card className="border-white/10 bg-white/5">
+      <Card className="border-white/15 bg-white/10 backdrop-blur-2xl">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-white text-lg">Sent History</CardTitle>
-            {broadcasting && (
-              <span className="inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-300">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Broadcast in progress
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-white text-lg">Sent History</CardTitle>
+              <span className="text-xs text-white/40 bg-white/5 px-2 py-0.5 rounded">
+                {total} total
               </span>
-            )}
+            </div>
+            <div className="flex items-center gap-2">
+              {broadcasting && (
+                <span className="inline-flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-300">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Broadcast in progress
+                </span>
+              )}
+              {selectedIds.size > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDeleteSelected}
+                  disabled={deleteSelectedMutation.isPending}
+                  className="h-7 text-red-300 border-red-400/30 hover:bg-red-500/15"
+                >
+                  <Trash2 size={13} />
+                  Delete selected ({selectedIds.size})
+                </Button>
+              )}
+              {notifications.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearAll}
+                  disabled={clearAllMutation.isPending}
+                  className="h-7 text-white border-white/20 hover:bg-white/10"
+                >
+                  <Trash2 size={13} />
+                  Clear All
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -553,28 +693,36 @@ export default function NotificationsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-white/10">
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={notifications.length > 0 && selectedIds.size === notifications.length}
+                      onCheckedChange={handleToggleAll}
+                      className="border-white/30"
+                    />
+                  </TableHead>
                   <TableHead className="text-white/60">Title</TableHead>
                   <TableHead className="text-white/60">Status</TableHead>
                   <TableHead className="text-white/60">Type</TableHead>
                   <TableHead className="text-white/60">Target</TableHead>
                   <TableHead className="text-white/60 text-right">Recipients</TableHead>
                   <TableHead className="text-white/60 text-right">Delivered</TableHead>
+                  <TableHead className="text-white/60 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 4 }).map((_, i) => (
                     <TableRow key={i} className="border-white/5">
-                      <TableCell colSpan={6}><Skeleton className="h-10 w-full" /></TableCell>
+                      <TableCell colSpan={8}><Skeleton className="h-10 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : isError ? (
                   <TableRow className="border-white/5">
-                    <TableCell colSpan={6} className="text-white/60 text-center py-8">Failed to load sent notifications.</TableCell>
+                    <TableCell colSpan={8} className="text-white/60 text-center py-8">Failed to load sent notifications.</TableCell>
                   </TableRow>
                 ) : notifications.length === 0 ? (
                   <TableRow className="border-white/5">
-                    <TableCell colSpan={6} className="text-white/40 text-center py-10">
+                    <TableCell colSpan={8} className="text-white/40 text-center py-10">
                       No notifications sent yet.
                     </TableCell>
                   </TableRow>
@@ -582,7 +730,14 @@ export default function NotificationsPage() {
                   notifications.map((n) => {
                     const st = STATUS_UI[n.status || 'sent'] || STATUS_UI.sent;
                     return (
-                    <TableRow key={n.id} className="border-white/5">
+                    <TableRow key={n.id} className={`border-white/5 ${selectedIds.has(n.id) ? 'bg-white/5' : ''}`}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.has(n.id)}
+                          onCheckedChange={() => handleToggleSelect(n.id)}
+                          className="border-white/30"
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {n.image_url ? <img key={n.image_url} src={safeImgUrl(n.image_url)} alt="" className="h-8 w-12 rounded object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} /> : <div className="h-8 w-12 rounded bg-white/10 flex items-center justify-center"><Bell className="h-4 w-4 text-white/50" /></div>}
@@ -603,6 +758,18 @@ export default function NotificationsPage() {
                       <TableCell className="text-white/60 text-sm">{n.is_broadcast ? 'Everyone' : 'Individual'}</TableCell>
                       <TableCell className="text-white/70 text-right">{n.recipients || 0}</TableCell>
                       <TableCell className="text-white/70 text-right">{n.status === 'sent' ? n.sent ?? 0 : '—'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteNotification(n)}
+                          disabled={deleteNotificationMutation.isPending}
+                          className="h-7 w-7 text-red-300 hover:text-red-200 hover:bg-white/10"
+                          title="Delete from history"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                     );
                   })
@@ -610,6 +777,33 @@ export default function NotificationsPage() {
               </TableBody>
             </Table>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-white/10 px-4 py-2.5">
+              <span className="text-xs text-white/40">
+                Page {page} of {totalPages}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setPage((p) => Math.max(1, p - 1)); setSelectedIds(new Set()); }}
+                  disabled={page <= 1 || isLoading}
+                  className="h-7 text-white border-white/20 hover:bg-white/10"
+                >
+                  Prev
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); setSelectedIds(new Set()); }}
+                  disabled={page >= totalPages || isLoading}
+                  className="h-7 text-white border-white/20 hover:bg-white/10"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

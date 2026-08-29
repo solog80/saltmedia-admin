@@ -4,12 +4,12 @@ import Home01Icon from '@hugeicons/core-free-icons/dist/esm/Home01Icon';
 import UserGroupIcon from '@hugeicons/core-free-icons/dist/esm/UserGroupIcon';
 import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon';
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
-import Tv01Icon from '@hugeicons/core-free-icons/dist/esm/Tv01Icon';
 import { Calendar, Zap, DollarSign, Radio, BarChart3, Play, Image as ImageIcon, RadioTower, Bell, Newspaper } from 'lucide-react';
 import LogoutButton from './LogoutButton';
 
 const Sidebar = ({ role }: { role?: string | null }) => {
   const isEditor = role === 'editor';
+  const isModerator = role === 'moderator';
   return (
     <div
       className="flex flex-col w-64 text-white h-screen border-r"
@@ -27,7 +27,6 @@ const Sidebar = ({ role }: { role?: string | null }) => {
       </div>
       <nav className="flex-1 px-4 py-6 space-y-1">
         {!isEditor && (
-          <>
         <Link
           href="/home"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
@@ -35,6 +34,8 @@ const Sidebar = ({ role }: { role?: string | null }) => {
           <HugeiconsIcon icon={Home01Icon} size={20} />
           Dashboard
         </Link>
+        )}
+        {!isEditor && !isModerator && (
         <Link
           href="/user-management"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
@@ -42,7 +43,6 @@ const Sidebar = ({ role }: { role?: string | null }) => {
           <HugeiconsIcon icon={UserGroupIcon} size={20} />
           User Management
         </Link>
-        </>
         )}
         <Link
           href="/news"
@@ -52,7 +52,6 @@ const Sidebar = ({ role }: { role?: string | null }) => {
           News
         </Link>
         {!isEditor && (
-          <>
         <Link
           href="/ondemand"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
@@ -60,13 +59,9 @@ const Sidebar = ({ role }: { role?: string | null }) => {
           <HugeiconsIcon icon={Video01Icon} size={20} />
           On-demand Videos
         </Link>
-        <Link
-          href="/tv"
-          className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"
-        >
-          <HugeiconsIcon icon={Tv01Icon} size={20} />
-          TV
-        </Link>
+        )}
+        {!isEditor && !isModerator && (
+          <>
         <Link
           href="/radio"
           className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white rounded-md"

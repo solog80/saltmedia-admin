@@ -61,6 +61,9 @@ export interface JoomlaReferenceItem {
     name?: string
     alias?: string
     username?: string
+    parent_id?: number
+    level?: number
+    published?: number
   }
 }
 

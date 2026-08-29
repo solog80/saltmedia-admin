@@ -44,6 +44,10 @@ export async function POST(request: NextRequest) {
   switch (action) {
     case 'send':
       return proxy('sendNotification', { method: 'POST', body: JSON.stringify(body) });
+    case 'clearAll':
+      return proxy('clearSentNotifications', { method: 'POST' });
+    case 'deleteMany':
+      return proxy('deleteNotifications', { method: 'POST', body: JSON.stringify(body) });
     case 'getLinkMetadata':
       return proxy('getLinkMetadata', { method: 'POST', body: JSON.stringify(body) });
     case 'uploadImage': {
@@ -71,4 +75,12 @@ export async function POST(request: NextRequest) {
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   }
+}
+
+export async function DELETE(request: NextRequest) {
+  const id = new URL(request.url).searchParams.get('id');
+  if (!id) {
+    return NextResponse.json({ error: 'id is required' }, { status: 400 });
+  }
+  return proxy(`deleteNotification?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

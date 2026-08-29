@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -29,10 +29,12 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Loader2 } from 'lucide-react';
 
 interface User {
   id: string;
-  email: string;
+  email?: string | null;
   role: string;
   name?: string;
 }
@@ -40,6 +42,9 @@ interface User {
 interface GetUsersPaginatedResponse {
   users: User[];
   nextPageToken: string | null;
+  total: number;
+  page: number;
+  limit: number;
 }
 
 interface UpdateUserRolePayload {
@@ -64,19 +69,36 @@ const UserManagementPage = () => {
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('viewer');
 
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [tab, setTab] = useState<'email' | 'anonymous'>('email');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error } = useInfiniteQuery<GetUsersPaginatedResponse, Error>({
-    queryKey: ['users', searchTerm],
-    queryFn: async ({ pageParam }) => {
+  // Debounce search so we don't fire a query on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setSearchTerm(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Reset to page 1 whenever the tab or debounced search changes.
+  useEffect(() => {
+    setPage(1);
+  }, [tab, searchTerm]);
+
+  const effectiveSearch = searchTerm.trim().length >= 2 ? searchTerm : '';
+
+  const { data, isLoading, isError, error, isFetching } = useQuery<GetUsersPaginatedResponse, Error>({
+    queryKey: ['users', tab, effectiveSearch, page],
+    queryFn: async () => {
       const params = new URLSearchParams();
-      if (pageParam) params.set('lastVisibleId', pageParam as string);
-      if (searchTerm) params.set('searchTerm', searchTerm);
+      params.set('hasEmail', tab === 'email' ? 'true' : 'false');
+      if (effectiveSearch) params.set('searchTerm', effectiveSearch);
+      params.set('page', String(page));
+      params.set('limit', String(pageSize));
       const res = await fetch(`/api/users?${params.toString()}`);
       return await res.json();
     },
-    initialPageParam: undefined,
-    getNextPageParam: (lastPage) => lastPage.nextPageToken,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -92,7 +114,7 @@ const UserManagementPage = () => {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', searchTerm] });
+      queryClient.invalidateQueries({ queryKey: ['users', tab, effectiveSearch] });
       setIsEditModalOpen(false);
       setEditingUser(null);
       setSelectedRole('');
@@ -115,7 +137,7 @@ const UserManagementPage = () => {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', searchTerm] });
+      queryClient.invalidateQueries({ queryKey: ['users', tab, effectiveSearch] });
       setIsCreateModalOpen(false);
       setNewEmail('');
       setNewPassword('');
@@ -143,10 +165,9 @@ const UserManagementPage = () => {
     createUserMutation.mutate({ email: newEmail, password: newPassword, role: newRole });
   };
 
-  if (isLoading) return <div className="p-8 text-center text-white">Loading users...</div>;
-  if (isError) return <div className="p-8 text-center text-red-300">Error: {error?.message}</div>;
-
-  const allUsers = data?.pages.flatMap((page) => page.users) || [];
+  const allUsers = data?.users || [];
+  const totalCount = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (
     <div className="p-6 space-y-6">
@@ -155,24 +176,48 @@ const UserManagementPage = () => {
           <h1 className="text-3xl font-bold text-white">User Management</h1>
           <p className="mt-2 text-white/70">Manage user roles and permissions</p>
         </div>
-        <Button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
-        >
-          Create New User
-        </Button>
+        {tab === 'email' && (
+          <Button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            Create New User
+          </Button>
+        )}
       </div>
 
       <div className="frosted-glass">
         <div className="p-6 border-b border-white/20">
           <h2 className="text-lg font-semibold text-white mb-4">Users</h2>
-          <div className="flex items-center space-x-2">
-            <Input
-              placeholder="Search by name..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="max-w-xs bg-white/10 border-white/20 text-white placeholder-white/40"
-            />
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <Tabs
+              value={tab}
+              onValueChange={(v) => setTab(v as 'email' | 'anonymous')}
+            >
+              <TabsList className="bg-white/10 border border-white/20">
+                <TabsTrigger
+                  value="email"
+                  className="text-white data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                >
+                  Users with Emails
+                </TabsTrigger>
+                <TabsTrigger
+                  value="anonymous"
+                  className="text-white data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                >
+                  Anonymous
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="flex items-center gap-2">
+              {isFetching && <Loader2 className="h-4 w-4 animate-spin text-white/60" />}
+              <Input
+                placeholder={tab === 'email' ? 'Search by name or email...' : 'Search by name...'}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-72 bg-white/10 border-white/20 text-white placeholder-white/40"
+              />
+            </div>
           </div>
         </div>
         <div className="p-6">
@@ -187,10 +232,22 @@ const UserManagementPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {allUsers.length > 0 ? (
+                {isLoading ? (
+                  <TableRow className="border-white/20">
+                    <TableCell colSpan={4} className="h-24 text-center text-white/50">
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                    </TableCell>
+                  </TableRow>
+                ) : isError ? (
+                  <TableRow className="border-white/20">
+                    <TableCell colSpan={4} className="h-24 text-center text-red-300">
+                      Error: {error?.message}
+                    </TableCell>
+                  </TableRow>
+                ) : allUsers.length > 0 ? (
                   allUsers.map((user) => (
                     <TableRow key={user.id} className="border-white/20 hover:bg-white/5">
-                      <TableCell className="font-medium text-white">{user.email}</TableCell>
+                      <TableCell className="font-medium text-white">{user.email || 'Anonymous'}</TableCell>
                       <TableCell className="text-white/80">{user.name || 'N/A'}</TableCell>
                       <TableCell className="capitalize text-white/80">{user.role || 'N/A'}</TableCell>
                       <TableCell className="text-right">
@@ -216,18 +273,31 @@ const UserManagementPage = () => {
             </Table>
           </div>
 
-          {hasNextPage && (
-            <div className="mt-6 flex justify-center">
+          <div className="mt-6 flex items-center justify-between">
+            <span className="text-xs text-white/40">
+              Page {page} of {totalPages} ({totalCount.toLocaleString()} users)
+            </span>
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                onClick={() => fetchNextPage()}
-                disabled={isFetchingNextPage}
-                className="border-white/20 text-white hover:bg-white/10"
+                size="sm"
+                disabled={page <= 1 || isFetching}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="text-white border-white/20 hover:bg-white/10 h-8 px-3"
               >
-                {isFetchingNextPage ? 'Loading more...' : 'Load More'}
+                Prev
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages || isFetching}
+                onClick={() => setPage((p) => p + 1)}
+                className="text-white border-white/20 hover:bg-white/10 h-8 px-3"
+              >
+                Next
               </Button>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -237,18 +307,19 @@ const UserManagementPage = () => {
           <DialogHeader>
             <DialogTitle>Edit User Role</DialogTitle>
             <DialogDescription>
-              Update the role for {editingUser?.email}.
+              Update the role for {editingUser?.email || 'anonymous user'}.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={selectedRole} onValueChange={setSelectedRole}>
+              <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v ?? '')}>
                 <SelectTrigger id="role">
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="moderator">Moderator</SelectItem>
                   <SelectItem value="editor">Editor</SelectItem>
                   <SelectItem value="viewer">Viewer</SelectItem>
                 </SelectContent>
@@ -296,12 +367,13 @@ const UserManagementPage = () => {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="newRole">Role</Label>
-              <Select value={newRole} onValueChange={setNewRole}>
+              <Select value={newRole} onValueChange={(v) => setNewRole(v ?? '')}>
                 <SelectTrigger id="newRole">
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="moderator">Moderator</SelectItem>
                   <SelectItem value="editor">Editor</SelectItem>
                   <SelectItem value="viewer">Viewer</SelectItem>
                 </SelectContent>

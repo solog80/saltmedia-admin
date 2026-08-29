@@ -32,8 +32,14 @@ export async function GET(request: NextRequest) {
   const q = new URLSearchParams();
   const lastVisibleId = searchParams.get('lastVisibleId');
   const searchTerm = searchParams.get('searchTerm');
+  const hasEmail = searchParams.get('hasEmail');
+  const page = searchParams.get('page');
+  const limit = searchParams.get('limit');
   if (lastVisibleId) q.set('lastVisibleId', lastVisibleId);
   if (searchTerm) q.set('searchTerm', searchTerm);
+  if (hasEmail) q.set('hasEmail', hasEmail);
+  if (page) q.set('page', page);
+  if (limit) q.set('limit', limit);
   const qs = q.toString();
   return proxy(`getUsersPaginated${qs ? '?' + qs : ''}`);
 }

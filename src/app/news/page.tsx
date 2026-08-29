@@ -38,6 +38,7 @@ import {
   useUpdateArticle,
   type JoomlaArticle,
 } from "@/lib/api/news"
+import { categoryOptions, categoryDisplayLabel } from "@/lib/newsCategories"
 
 const PAGE_SIZE = 10
 
@@ -66,9 +67,10 @@ export default function NewsPage() {
   const [deleting, setDeleting] = useState(false)
 
   const authorName = (article: JoomlaArticle): string => {
+    if (article.attributes.created_by_alias) return article.attributes.created_by_alias
     const id = article.attributes.created_by
     const found = authors.data?.find((u) => Number(u.id) === id)
-    return (found?.attributes.name ?? article.attributes.created_by_alias) || "Unknown"
+    return found?.attributes.name || "Unknown"
   }
 
   const categoryTitle = (article: JoomlaArticle): string => {
@@ -141,9 +143,9 @@ export default function NewsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
-            {categories.data?.map((c) => (
+            {categoryOptions(categories.data || []).map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.attributes.title}
+                {categoryDisplayLabel(c.label, c.depth)}
               </SelectItem>
             ))}
           </SelectContent>
