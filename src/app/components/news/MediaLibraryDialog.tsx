@@ -153,15 +153,14 @@ export default function MediaLibraryDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        style={{ width: "80vw", height: "45vw", maxWidth: "calc(100vw - 2rem)", maxHeight: "calc(100vh - 2rem)" }}
-        className="flex flex-col overflow-hidden border border-white/10 bg-neutral-900 p-0 text-white"
+        className="flex flex-col overflow-hidden border border-white/10 bg-neutral-900 p-0 text-white max-w-none w-[calc(100vw-1rem)] h-[calc(100vh-1rem)] sm:w-[80vw] sm:h-[45vw] sm:max-w-[calc(100vw-2rem)] sm:max-h-[calc(100vh-2rem)]"
       >
         {/* Header */}
-        <div className="border-b border-white/10 px-6 pt-5 pb-4">
+        <div className="flex-shrink-0 border-b border-white/10 px-4 pt-4 pb-3 sm:px-6 sm:pt-5 sm:pb-4">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Media library</DialogTitle>
           </DialogHeader>
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -173,14 +172,14 @@ export default function MediaLibraryDialog({
               Back
             </Button>
             {creatingFolder ? (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   autoFocus
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
                   placeholder={`Folder name${folder ? ` in /${folder}` : ""}`}
-                  className="h-8 w-44 rounded-md border border-white/15 bg-white/5 px-2 text-xs text-white outline-none placeholder:text-white/40 focus:border-blue-500"
+                  className="h-8 w-36 sm:w-44 rounded-md border border-white/15 bg-white/5 px-2 text-xs text-white outline-none placeholder:text-white/40 focus:border-blue-500"
                 />
                 <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={handleCreateFolder} disabled={creating || !newFolderName.trim()}>
                   {creating ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
@@ -209,7 +208,7 @@ export default function MediaLibraryDialog({
                   onClick={() => setCreatingFolder(true)}
                 >
                   <FolderPlus size={14} />
-                  New folder
+                  <span className="hidden sm:inline">New folder</span>
                 </Button>
                 <input
                   ref={fileInputRef}
@@ -255,7 +254,7 @@ export default function MediaLibraryDialog({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4">
           {error && (
             <div className="mb-3 rounded-md border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
               {error}
@@ -271,7 +270,7 @@ export default function MediaLibraryDialog({
               <p className="mt-1 text-xs text-white/30">Use the Upload button to add one</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5">
               {items.map((item) =>
                 item.isFolder ? (
                   <button
@@ -280,10 +279,10 @@ export default function MediaLibraryDialog({
                     className="group flex aspect-square flex-col items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 text-white/70 transition hover:border-white/25 hover:bg-white/10"
                     onClick={() => setFolder(item.path.replace(/^news\/?/, "").replace(/\/$/, ""))}
                   >
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-yellow-400/10 text-yellow-300/80 transition group-hover:scale-105">
-                      <Folder size={26} />
+                    <div className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-xl bg-yellow-400/10 text-yellow-300/80 transition group-hover:scale-105">
+                      <Folder size={22} />
                     </div>
-                    <span className="max-w-full truncate px-3 text-xs font-medium">{item.name}</span>
+                    <span className="max-w-full truncate px-2 sm:px-3 text-xs font-medium">{item.name}</span>
                   </button>
                 ) : (
                   <div
@@ -335,7 +334,7 @@ export default function MediaLibraryDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-6 py-4">
+        <div className="flex-shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-white/10 px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-3">
             {selected ? (
               <>

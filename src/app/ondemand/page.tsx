@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChevronDown } from 'lucide-react';
 
 // HugeIcons
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -186,7 +187,13 @@ function OndemandContent() {
   // Upload server selection (Bunny CDN or SFX)
   const [uploadServer, setUploadServer] = useState<'bunny' | 'sfx'>('bunny');
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>(loadPendingUploads);
+  const [uploadSectionOpen, setUploadSectionOpen] = useState(false);
   const fileRef = useRef<File | null>(null);
+
+  // Auto-open upload section when uploading starts
+  useEffect(() => {
+    if (isUploading) setUploadSectionOpen(true);
+  }, [isUploading]);
 
   const addPendingUpload = (p: PendingUpload) => {
     setPendingUploads(prev => {
@@ -910,18 +917,30 @@ function OndemandContent() {
         </div>
       </div>
 
-      <div className="bg-gradient-to-br from-blue-600/10 to-purple-600/10 backdrop-blur-xl border border-blue-500/20 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-6">
+      <div className="bg-gradient-to-br from-blue-600/10 to-purple-600/10 backdrop-blur-xl border border-blue-500/20 rounded-xl">
+        <button
+          type="button"
+          className="flex items-center gap-3 w-full p-6 text-left"
+          onClick={() => setUploadSectionOpen((prev) => !prev)}
+        >
           <div className="p-2.5 rounded-lg bg-blue-500/20 border border-blue-400/30">
             <HugeiconsIcon icon={CloudUploadIcon} size={22} className="text-blue-400" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <h2 className="text-lg font-semibold text-white">Upload New Video</h2>
             <p className="text-sm text-white/50">Upload a video file to any show</p>
           </div>
-        </div>
+          {isUploading && (
+            <span className="text-xs text-blue-300 bg-blue-500/15 border border-blue-500/30 rounded-full px-2.5 py-0.5 mr-2">Uploading...</span>
+          )}
+          <ChevronDown
+            size={20}
+            className={`text-white/50 transition-transform duration-200 ${uploadSectionOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
 
-        <div className="space-y-5">
+        {uploadSectionOpen && (
+        <div className="px-6 pb-6 space-y-5">
           <div className="space-y-2">
             <Label className="text-sm font-medium text-white/80">Upload Server</Label>
             <Select
@@ -1295,6 +1314,7 @@ function OndemandContent() {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {uploadServer === 'sfx' && sfxActiveJobs && sfxActiveJobs.length > 0 && (
