@@ -67,6 +67,18 @@ export const useEPGData = () => {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const useEPGSearch = (query: string) => {
+  return useQuery({
+    queryKey: ['epgSearch', query],
+    queryFn: async (): Promise<any> => {
+      return request(`/api/epg?search=${encodeURIComponent(query.trim())}`);
+    },
+    enabled: query.trim().length > 1,
+    staleTime: 60 * 1000,
+  });
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const useAddProgram = () => {
   const queryClient = useQueryClient();
   return useMutation({

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Calendar, AlertCircle, Zap, Star } from 'lucide-react';
+import { Calendar, AlertCircle, Zap, Star, Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -11,7 +11,7 @@ import { FrostedDialog } from '../components/FrostedDialog';
 import { programSchema, type ProgramFormData } from '@/lib/schemas/program';
 import { eventSchema, type EventFormData } from '@/lib/schemas/event';
 import { useEPGStore } from '@/lib/stores/epgStore';
-import { useEPGData, useAddProgram, useUpdateProgram, useDeleteProgram } from '@/lib/hooks/useEPGData';
+import { useEPGData, useEPGSearch, useAddProgram, useUpdateProgram, useDeleteProgram } from '@/lib/hooks/useEPGData';
 import { useEventsData, useAddEvent, useUpdateEvent, useDeleteEvent } from '@/lib/hooks/useEventsData';
 import { utcToLocal, localToUtc, utcDatetimeToLocal } from '@/lib/utils/timeConversion';
 
@@ -43,6 +43,16 @@ export default function EPGPage() {
   const ITEMS_PER_PAGE = 6;
   const [epgType, setEpgType] = React.useState<'tv' | 'radio' | 'events'>('tv');
 
+  // EPG program search (OpenSearch-backed, debounced)
+  const [searchInput, setSearchInput] = React.useState('');
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [highlightedProgramIdx, setHighlightedProgramIdx] = React.useState<number | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput.trim()), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+  const { data: epgSearch, isFetching: epgSearching } = useEPGSearch(searchQuery);
+
   // Use React Query for data fetching
   const { data: epgResponse, isLoading, error } = useEPGData();
   const fullData = epgResponse?.data as any || { tv: {}, radio: undefined };
@@ -72,6 +82,17 @@ export default function EPGPage() {
     setImageLandscapePreview,
     clearImagePreviews,
   } = useEPGStore();
+
+  // Scroll to + reveal a program picked from search once its page is rendered.
+  useEffect(() => {
+    if (highlightedProgramIdx == null) return;
+    const t = setTimeout(() => {
+      document
+        .getElementById(`epg-program-${highlightedProgramIdx}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    return () => clearTimeout(t);
+  }, [highlightedProgramIdx, currentPage, selectedStation, epgType]);
 
   // React Hook Form with Zod validation
   const {
@@ -445,6 +466,37 @@ export default function EPGPage() {
 
 
 
+  const goToProgram = (p: { station_id: string; program_name?: string }) => {
+    // Jump to the station that airs this program (radio maps to the single radio tab).
+    const isTv = !!(fullData.tv && fullData.tv[p.station_id]);
+    const stationData = isTv ? fullData.tv[p.station_id] : fullData.radio;
+    if (isTv) {
+      setEpgType('tv');
+      setSelectedStation(p.station_id);
+    } else {
+      setEpgType('radio');
+      setSelectedStation('radio');
+    }
+    // Locate the program in the station list, page to it and highlight it.
+    if (stationData?.programs) {
+      const idx = stationData.programs.findIndex(
+        (prog: any) =>
+          (prog.programName || '').trim().toLowerCase() ===
+          (p.program_name || '').trim().toLowerCase(),
+      );
+      if (idx >= 0) {
+        setCurrentPage(Math.floor(idx / ITEMS_PER_PAGE) + 1);
+        setHighlightedProgramIdx(idx);
+      } else {
+        setHighlightedProgramIdx(null);
+      }
+    } else {
+      setHighlightedProgramIdx(null);
+    }
+    setSearchInput('');
+    setSearchQuery('');
+  };
+
   return (
     <div className="p-4 h-screen flex flex-col">
       <div className="flex justify-between items-start gap-4 mb-4">
@@ -457,18 +509,60 @@ export default function EPGPage() {
             {epgType === 'tv' ? stationCount : 1} {epgType === 'tv' ? 'TV' : 'Radio'} {epgType === 'tv' ? 'stations' : 'station'} • All programs
           </p>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1 bg-white/10 rounded text-xs text-white/60">
-          {source === 'redis-cache' ? (
-            <>
-              <Zap size={14} className="text-yellow-400" />
-              <span>⚡ Cached</span>
-            </>
-          ) : (
-            <>
-              <Calendar size={14} className="text-blue-400" />
-              <span>📊 Live</span>
-            </>
-          )}
+        <div className="flex items-center gap-2">
+          {/* Program search */}
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40" />
+            <Input
+              placeholder="Search programs…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="pl-8 pr-8 w-72"
+            />
+            {searchInput && (
+              <button
+                onClick={() => setSearchInput('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+              >
+                <X size={14} />
+              </button>
+            )}
+            {searchInput.trim().length > 1 && (
+              <div className="absolute right-0 z-30 mt-1 w-96 max-h-80 overflow-y-auto rounded-lg border border-white/10 bg-neutral-800 shadow-xl">
+                {epgSearching && searchQuery && (
+                  <div className="px-3 py-2 text-xs text-white/40">Searching…</div>
+                )}
+                {!epgSearching && (epgSearch?.data?.programs?.length ?? 0) === 0 && (
+                  <div className="px-3 py-2 text-xs text-white/40">No programs found</div>
+                )}
+                {(epgSearch?.data?.programs ?? []).map((p: any) => (
+                  <button
+                    key={`${p.id}-${p.station_id}-${p.program_name}-${p.start_time}-${p.days}`}
+                    onClick={() => goToProgram(p)}
+                    className="block w-full text-left px-3 py-2 border-b border-white/5 last:border-0 hover:bg-white/10"
+                  >
+                    <div className="text-sm text-white font-medium">{p.program_name}</div>
+                    <div className="text-xs text-white/50">
+                      {p.station_id} • {p.start_time}–{p.end_time} • {p.days}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1 bg-white/10 rounded text-xs text-white/60">
+            {source === 'redis-cache' ? (
+              <>
+                <Zap size={14} className="text-yellow-400" />
+                <span>⚡ Cached</span>
+              </>
+            ) : (
+              <>
+                <Calendar size={14} className="text-blue-400" />
+                <span>📊 Live</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -652,7 +746,10 @@ export default function EPGPage() {
               {Object.keys(epgData).map((stationName) => (
                 <button
                   key={stationName}
-                  onClick={() => setSelectedStation(stationName)}
+                  onClick={() => {
+                    setSelectedStation(stationName);
+                    setHighlightedProgramIdx(null);
+                  }}
                   className={`text-xs sm:text-sm py-2 px-2 rounded transition ${
                     selectedStation === stationName
                       ? 'bg-blue-600 text-white font-semibold'
@@ -724,8 +821,11 @@ export default function EPGPage() {
                     const idx = startIdx + pIdx;
                     return (
                   <div
+                    id={`epg-program-${idx}`}
                     key={idx}
-                    className="bg-white/5 hover:bg-white/10 rounded p-3 border border-white/10 transition relative group"
+                    className={`bg-white/5 hover:bg-white/10 rounded p-3 border border-white/10 transition relative group ${
+                      idx === highlightedProgramIdx ? 'ring-2 ring-yellow-400 bg-yellow-500/10' : ''
+                    }`}
                   >
                     <div className="absolute top-2 right-2 flex gap-1">
                       <button

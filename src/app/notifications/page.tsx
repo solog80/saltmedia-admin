@@ -15,6 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/context/AuthContext';
 
 interface SentNotification {
   id: string;
@@ -28,6 +29,7 @@ interface SentNotification {
   recipients: number;
   sent?: number;
   status?: string;
+  sent_by?: string | null;
   created_at: string;
 }
 
@@ -47,10 +49,17 @@ const STATUS_UI: Record<string, { label: string; className: string; dot: string 
   failed: { label: 'Failed', className: 'bg-red-500/15 text-red-300 border-red-500/40', dot: 'bg-red-400' },
 };
 
+// Hard caps — the OS display standard (2 lines Android, ~3 expanded iOS).
+// Anything beyond this is truncated anyway, so the composer refuses to go further.
+const TITLE_CHAR_CAP = 20;
+const MESSAGE_CHAR_CAP = 60;
+const clampText = (s: string, cap: number) => s.slice(0, cap);
+
 const safeImgUrl = (u?: string) => (u && u.includes(' ') ? encodeURI(u) : u);
 
 export default function NotificationsPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -163,8 +172,8 @@ export default function NotificationsPage() {
   const applyContent = (key: string) => {
     const c = contentOptionsQuery.data?.find((x: any) => x.key === key);
     if (!c) return;
-    setTitle(c.title);
-    setMessage(c.description || '');
+    setTitle(clampText(c.title, TITLE_CHAR_CAP));
+    setMessage(clampText(c.description || '', MESSAGE_CHAR_CAP));
     if (c.image) setImageUrl(encodeURI(c.image)); // encode spaces (e.g. THE%20DIALOGUE)
     setLink(`https://edge.solofx.net/${c.kind}/${encodeURIComponent(c.id)}`);
     setSelectedContentKey(key);
@@ -310,8 +319,8 @@ export default function NotificationsPage() {
       });
       const data = await res.json();
       if (data?.success && data.metadata) {
-        if (!title && data.metadata.title) setTitle(data.metadata.title);
-        if (!message && data.metadata.description) setMessage(data.metadata.description);
+        if (!title && data.metadata.title) setTitle(clampText(data.metadata.title, TITLE_CHAR_CAP));
+        if (!message && data.metadata.description) setMessage(clampText(data.metadata.description, MESSAGE_CHAR_CAP));
         if (!imageUrl && data.metadata.image) setImageUrl(data.metadata.image);
       }
     } catch { /* ignore */ } finally {
@@ -381,12 +390,13 @@ export default function NotificationsPage() {
       return;
     }
     sendMutation.mutate({
-      title: title.trim(),
-      message: message.trim(),
+      title: clampText(title.trim(), TITLE_CHAR_CAP),
+      message: clampText(message.trim(), MESSAGE_CHAR_CAP),
       type,
       link: link.trim() || undefined,
       imageUrl: imageUrl.trim() || undefined,
       userId: target === 'individual' ? userId : undefined,
+      sentBy: user?.email || user?.displayName || user?.uid || undefined,
     });
   };
 
@@ -510,12 +520,18 @@ export default function NotificationsPage() {
 
                 <div className="space-y-1.5">
                   <Label className="text-white/80 text-xs">Title</Label>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New Episode Tonight!" className="h-9 bg-white/10 border-white/20 text-white placeholder-white/40" />
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New Episode Tonight!" className="h-9 bg-white/10 border-white/20 text-white placeholder-white/40" maxLength={TITLE_CHAR_CAP} />
+                  <p className="text-[11px] text-white/40">
+                    {title.length} / {TITLE_CHAR_CAP} chars · ~{Math.max(1, Math.ceil(title.length / 25))} line{Math.max(1, Math.ceil(title.length / 25)) === 1 ? '' : 's'}
+                  </p>
                 </div>
 
                 <div className="space-y-1.5">
                   <Label className="text-white/80 text-xs">Message</Label>
-                  <Textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={2} placeholder="What do you want to say?" className="bg-white/10 border-white/20 text-white placeholder-white/40 min-h-[52px]" />
+                  <Textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={2} placeholder="What do you want to say?" className="bg-white/10 border-white/20 text-white placeholder-white/40 min-h-[52px]" maxLength={MESSAGE_CHAR_CAP} />
+                  <p className="text-[11px] text-white/40">
+                    {message.length} / {MESSAGE_CHAR_CAP} chars · ~{Math.max(1, Math.ceil(message.length / 35))} line{Math.max(1, Math.ceil(message.length / 35)) === 1 ? '' : 's'}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -704,6 +720,7 @@ export default function NotificationsPage() {
                   <TableHead className="text-white/60">Status</TableHead>
                   <TableHead className="text-white/60">Type</TableHead>
                   <TableHead className="text-white/60">Target</TableHead>
+                  <TableHead className="text-white/60">Sent By</TableHead>
                   <TableHead className="text-white/60 text-right">Recipients</TableHead>
                   <TableHead className="text-white/60 text-right">Delivered</TableHead>
                   <TableHead className="text-white/60 text-right">Actions</TableHead>
@@ -713,16 +730,16 @@ export default function NotificationsPage() {
                 {isLoading ? (
                   Array.from({ length: 4 }).map((_, i) => (
                     <TableRow key={i} className="border-white/5">
-                      <TableCell colSpan={8}><Skeleton className="h-10 w-full" /></TableCell>
+                      <TableCell colSpan={9}><Skeleton className="h-10 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : isError ? (
                   <TableRow className="border-white/5">
-                    <TableCell colSpan={8} className="text-white/60 text-center py-8">Failed to load sent notifications.</TableCell>
+                    <TableCell colSpan={9} className="text-white/60 text-center py-8">Failed to load sent notifications.</TableCell>
                   </TableRow>
                 ) : notifications.length === 0 ? (
                   <TableRow className="border-white/5">
-                    <TableCell colSpan={8} className="text-white/40 text-center py-10">
+                    <TableCell colSpan={9} className="text-white/40 text-center py-10">
                       No notifications sent yet.
                     </TableCell>
                   </TableRow>
@@ -756,6 +773,7 @@ export default function NotificationsPage() {
                       </TableCell>
                       <TableCell><Badge className={`${TYPE_COLORS[n.type] || TYPE_COLORS.info} text-white`}>{n.type}</Badge></TableCell>
                       <TableCell className="text-white/60 text-sm">{n.is_broadcast ? 'Everyone' : 'Individual'}</TableCell>
+                      <TableCell className="text-white/60 text-sm">{n.sent_by || '—'}</TableCell>
                       <TableCell className="text-white/70 text-right">{n.recipients || 0}</TableCell>
                       <TableCell className="text-white/70 text-right">{n.status === 'sent' ? n.sent ?? 0 : '—'}</TableCell>
                       <TableCell className="text-right">

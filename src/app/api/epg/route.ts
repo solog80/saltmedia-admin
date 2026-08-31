@@ -29,6 +29,10 @@ async function proxy(path: string, init: RequestInit = {}) {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
+  const q = searchParams.get('search');
+  if (q && q.trim()) {
+    return proxy(`searchEpg?q=${encodeURIComponent(q.trim())}&limit=25`);
+  }
   if (searchParams.get('admin') === '1') return proxy('getAdminEPGData');
   return proxy('getEPGData');
 }

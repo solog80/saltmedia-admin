@@ -14,7 +14,7 @@ export default function SidebarShell({ role, children }: { role?: string | null;
       {/* Hamburger — mobile only */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-40 flex h-10 w-10 items-center justify-center rounded-lg bg-black/60 text-white backdrop-blur-md border border-white/10 md:hidden"
+        className="fixed top-4 right-4 z-40 flex h-10 w-10 items-center justify-center rounded-lg bg-black/60 text-white backdrop-blur-md border border-white/10 md:hidden"
         title="Open menu"
       >
         <Menu size={20} />
