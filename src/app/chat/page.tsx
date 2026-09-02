@@ -125,9 +125,24 @@ export default function ProgramChatPage() {
 
   const selectedShow = shows.find((s) => s.roomId === selectedRoom);
 
-  const fmtClock = (t: string) => {
-    // start/end are "HH:MM" station-local schedule times.
-    return t;
+  // EPG start/end times are stored in UTC (mesh matches them against the UTC
+  // clock). Convert an "HH:MM" UTC schedule time to the local broadcast clock
+  // (Africa/Kampala, UTC+3).
+  const LOCALE = 'en-GB';
+  const TZ = 'Africa/Kampala';
+
+  const fmtClock = (utcHHMM: string) => {
+    if (!utcHHMM) return '';
+    const [h, m] = utcHHMM.split(':').map((n) => parseInt(n, 10));
+    if (Number.isNaN(h) || Number.isNaN(m)) return utcHHMM;
+    const d = new Date();
+    d.setUTCHours(h, m, 0, 0);
+    return d.toLocaleTimeString(LOCALE, {
+      timeZone: TZ,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
   };
 
   return (
@@ -140,7 +155,7 @@ export default function ProgramChatPage() {
             <h1 className="text-xl font-bold text-white">Program Chat</h1>
             <p className="text-xs text-white/60">
               {selectedShow
-                ? `${selectedShow.programName} • ${selectedShow.startTime}–${selectedShow.endTime}`
+                ? `${selectedShow.programName} • ${fmtClock(selectedShow.startTime)}–${fmtClock(selectedShow.endTime)}`
                 : 'Select a program'}
             </p>
           </div>
@@ -328,6 +343,14 @@ function MessageBubble({
   const isAdmin = !!msg.is_admin_message;
   const name = msg.user_name || msg.sender_external_name || (isSms ? msg.sender_external_id : 'Anonymous');
   const when = new Date(msg.created_at);
+  const localTime = !Number.isNaN(when.getTime())
+    ? when.toLocaleTimeString('en-GB', {
+        timeZone: 'Africa/Kampala',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+    : '';
 
   return (
     <div className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
@@ -353,11 +376,7 @@ function MessageBubble({
           {isAdmin && !isSms && (
             <span className="text-[10px] px-1.5 py-px rounded bg-amber-500/25 text-amber-300 uppercase">Admin</span>
           )}
-          {when.getTime() > 0 && (
-            <span className="text-[10px] text-white/35">
-              {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
+          {localTime && <span className="text-[10px] text-white/35">{localTime}</span>}
         </div>
         <p className="text-sm text-white/95 whitespace-pre-wrap break-words">{msg.message_content}</p>
         {!isMine && (
