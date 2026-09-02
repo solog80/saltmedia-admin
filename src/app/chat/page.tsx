@@ -60,8 +60,16 @@ export default function ProgramChatPage() {
   const [sending, setSending] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [maximized, setMaximized] = useState(false); // hide panel -> full-width messages
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagePaneRef = useRef<HTMLDivElement>(null);
+
+  // Track browser fullscreen so the toggle icon stays accurate.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
 
   const loadShows = useCallback(async () => {
     try {
@@ -347,10 +355,10 @@ export default function ProgramChatPage() {
               </span>
               <button
                 onClick={toggleFullscreen}
-                title={document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'}
+                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
                 className="p-1.5 rounded bg-white/10 hover:bg-white/20 text-white/70"
               >
-                {document.fullscreenElement ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
               </button>
             </div>
           </div>
