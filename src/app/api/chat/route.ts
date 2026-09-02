@@ -56,7 +56,7 @@ async function getTodayLineup() {
     image?: string | null;
     thumbnail?: string | null;
   }[];
-  return rows
+  const mapped = rows
     .filter((r) => {
       const days = String(r.days || '').split(',').map((d) => d.trim());
       return days.includes(today);
@@ -68,6 +68,17 @@ async function getTodayLineup() {
       endTime: r.end_time,
       image: r.image || r.thumbnail || null,
     }));
+
+  // Same program can appear on multiple schedule rows (e.g. ENJIIRI across
+  // day groups) — keep one per room, earliest airing wins.
+  const byRoom = new Map<string, (typeof mapped)[number]>();
+  for (const item of mapped) {
+    const existing = byRoom.get(item.roomId);
+    if (!existing || item.startTime < existing.startTime) {
+      byRoom.set(item.roomId, item);
+    }
+  }
+  return [...byRoom.values()].sort((a, b) => (a.startTime < b.startTime ? -1 : 1));
 }
 
 export async function GET(request: NextRequest) {
