@@ -28,6 +28,14 @@ interface ChatMessage {
 
 const POLL_MS = 5000;
 
+// Privacy: show only the last 4 digits of an external SMS/WhatsApp number.
+function maskExternal(n?: string | null): string {
+  if (!n) return 'External';
+  const digits = n.replace(/\D/g, '');
+  if (digits.length <= 4) return n;
+  return `••••${digits.slice(-4)}`;
+}
+
 export default function ProgramChatPage() {
   const { user } = useAuth();
   const [shows, setShows] = useState<Show[]>([]);
@@ -285,10 +293,11 @@ export default function ProgramChatPage() {
               <div className="flex items-center justify-between mb-2 px-3 py-1.5 rounded bg-white/10 text-xs text-white/70">
                 <span className="truncate">
                   Replying {replyTarget.source === 'sms' ? 'via SMS' : 'to'}{' '}
-                  <b>{replyTarget.user_name || replyTarget.sender_external_id}</b>
-                  {replyTarget.source === 'sms' && replyTarget.sender_external_id
-                    ? ` (${replyTarget.sender_external_id})`
-                    : ''}
+                  <b>
+                    {replyTarget.source === 'sms'
+                      ? maskExternal(replyTarget.user_name || replyTarget.sender_external_id)
+                      : replyTarget.user_name || 'user'}
+                  </b>
                 </span>
                 <button onClick={() => setReplyTarget(null)} className="text-white/50 hover:text-white ml-2">
                   ✕
@@ -302,7 +311,7 @@ export default function ProgramChatPage() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder={
                   replyTarget?.source === 'sms'
-                    ? `Reply to ${replyTarget.sender_external_id} (SMS)...`
+                    ? `Reply to ${maskExternal(replyTarget.sender_external_id)} (SMS)...`
                     : 'Type a message...'
                 }
                 className="flex-1 rounded-md border border-input bg-white/10 px-3 py-2 text-white placeholder-white/40 text-sm outline-none focus:ring-1 focus:ring-blue-500"
@@ -341,7 +350,9 @@ function MessageBubble({
 }) {
   const isSms = msg.source === 'sms';
   const isAdmin = !!msg.is_admin_message;
-  const name = msg.user_name || msg.sender_external_name || (isSms ? msg.sender_external_id : 'Anonymous');
+  const name = isSms
+    ? maskExternal(msg.user_name || msg.sender_external_id || msg.sender_external_name)
+    : msg.user_name || msg.sender_external_name || 'Anonymous';
   const when = new Date(msg.created_at);
   const localTime = !Number.isNaN(when.getTime())
     ? when.toLocaleTimeString('en-GB', {
