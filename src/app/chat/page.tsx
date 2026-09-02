@@ -61,7 +61,9 @@ export default function ProgramChatPage() {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [maximized, setMaximized] = useState(false); // hide panel -> full-width messages
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
   const messagePaneRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Track browser fullscreen so the toggle icon stays accurate.
   useEffect(() => {
@@ -113,6 +115,12 @@ export default function ProgramChatPage() {
     const t = setInterval(() => loadMessages(selectedRoom), POLL_MS);
     return () => clearInterval(t);
   }, [selectedRoom, loadMessages]);
+
+  // Auto-scroll to the newest message only while enabled.
+  useEffect(() => {
+    if (!autoScroll) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, autoScroll, selectedRoom]);
 
   // Fullscreen toggle for the whole messages area.
   const toggleFullscreen = () => {
@@ -345,8 +353,17 @@ export default function ProgramChatPage() {
               </span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="text-xs text-white/40 hidden sm:inline">
-                {messages.length} msg{messages.length === 1 ? '' : 's'} • auto
+              <label className="flex items-center gap-1.5 text-xs text-white/60 cursor-pointer select-none" title="Jump to the newest message automatically">
+                <input
+                  type="checkbox"
+                  checked={autoScroll}
+                  onChange={(e) => setAutoScroll(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded accent-blue-600"
+                />
+                Auto-scroll
+              </label>
+              <span className="text-xs text-white/40 hidden md:inline">
+                {messages.length} msg{messages.length === 1 ? '' : 's'}
               </span>
               <button
                 onClick={toggleFullscreen}
@@ -386,6 +403,7 @@ export default function ProgramChatPage() {
                 />
               ))
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Composer */}
