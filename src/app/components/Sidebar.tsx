@@ -7,7 +7,7 @@ import Home01Icon from '@hugeicons/core-free-icons/dist/esm/Home01Icon';
 import UserGroupIcon from '@hugeicons/core-free-icons/dist/esm/UserGroupIcon';
 import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon';
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
-import { Calendar, Zap, DollarSign, Radio, BarChart3, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Calendar, Zap, DollarSign, Radio, BarChart3, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import LogoutButton from './LogoutButton';
 
 const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean; onClose?: () => void }) => {
@@ -76,6 +76,10 @@ const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean
         <SidebarLink href="/news" collapsed={collapsed} tooltip="News" onClick={handleNavClick}>
           <Newspaper size={20} />
           <span className={collapsed ? 'hidden' : ''}>News</span>
+        </SidebarLink>
+        <SidebarLink href="/chat" collapsed={collapsed} tooltip="Program Chat" onClick={handleNavClick}>
+          <MessageSquare size={20} />
+          <span className={collapsed ? 'hidden' : ''}>Program Chat</span>
         </SidebarLink>
         {!isEditor && (
           <SidebarLink href="/ondemand" collapsed={collapsed} tooltip="On-demand Videos" onClick={handleNavClick}>

@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 const publicPaths = ['/login', '/api/login', '/_next', '/favicon.ico', '/Salt_Media_App_Logo.png', '/Dolmites.jpg', '/google.svg'];
-const moderatorAllowed = ['/ondemand', '/api', '/home', '/login', '/news'];
-const editorAllowed = ['/news', '/api', '/login'];
+const moderatorAllowed = ['/ondemand', '/api', '/home', '/login', '/news', '/chat'];
+const editorAllowed = ['/news', '/api', '/login', '/chat'];
 
 function decodeToken(token: string) {
   try {
