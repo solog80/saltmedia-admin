@@ -51,7 +51,7 @@ interface Ad {
 
 interface AdFormProps {
   ad?: Ad
-  onSuccess: () => void
+  onSuccess: () => void | Promise<void>
 }
 
 const PLACEMENTS = ["pre-roll", "mid-roll", "banner"]

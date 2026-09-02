@@ -110,8 +110,9 @@ export default function AdsPage() {
     mutationFn: async (adId: string) => {
       return await adsApi.deleteAd(adId)
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["ads"] })
+      await adsApi.refreshAdCache()
       setSuccess("Ad deleted successfully")
       setTimeout(() => setSuccess(null), 3000)
     },
@@ -126,8 +127,11 @@ export default function AdsPage() {
     mutationFn: async ({ adId, status }: { adId: string; status: string }) => {
       return await adsApi.updateAdStatus(adId, status as any)
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["ads"] })
+      // Mesh caches active ads in memory (1h TTL) — invalidate so the app sees
+      // deactivated/activated ads immediately.
+      await adsApi.refreshAdCache()
       setSuccess("Ad status updated successfully")
       setTimeout(() => setSuccess(null), 3000)
     },
@@ -174,10 +178,11 @@ export default function AdsPage() {
     }
   }
 
-  const handleAdFormSuccess = () => {
+  const handleAdFormSuccess = async () => {
     setIsDialogOpen(false)
     setAdToEdit(undefined)
     queryClient.invalidateQueries({ queryKey: ["ads"] })
+    await adsApi.refreshAdCache()
     setSuccess(adToEdit ? "Ad updated successfully" : "Ad created successfully")
     setTimeout(() => setSuccess(null), 3000)
   }
