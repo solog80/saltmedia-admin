@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifySession } from "@/lib/firebaseAdmin";
 
 const API_BASE = process.env.API_BASE_URL || '';
 const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
@@ -30,6 +31,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await verifySession(request.cookies.get('firebaseToken')?.value);
+  if (!session || !['admin', 'editor', 'moderator'].includes(session.role ?? '')) {
+    return NextResponse.json({ error: 'Unauthorized: editor or admin access required' }, { status: 403 });
+  }
   const body = await request.json();
   return proxy('createJoomlaArticle', { method: 'POST', body: JSON.stringify(body) });
 }

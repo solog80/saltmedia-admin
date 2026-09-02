@@ -39,6 +39,7 @@ import {
   type JoomlaArticle,
 } from "@/lib/api/news"
 import { categoryOptions, categoryDisplayLabel } from "@/lib/newsCategories"
+import { useAuth } from "@/context/AuthContext"
 
 const PAGE_SIZE = 10
 
@@ -50,6 +51,8 @@ const STATUS_BADGE: Record<number, { label: string; className: string }> = {
 
 export default function NewsPage() {
   const router = useRouter()
+  const { role } = useAuth()
+  const isAdmin = role === "admin"
 
   const [search, setSearch] = useState("")
   const [searchInput, setSearchInput] = useState("")
@@ -240,18 +243,19 @@ export default function NewsPage() {
                         >
                           {article.attributes.state === 1 ? <EyeOff size={14} /> : <Eye size={14} />}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-red-400 hover:text-red-300"
-                          title="Delete"
-                          onClick={() => setDeleteTarget(article)}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-red-400 hover:text-red-300"
+                            title="Delete"
+                            onClick={() => setDeleteTarget(article)}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        )}
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </TableCell>                  </TableRow>
                 )
               })}
             </TableBody>
@@ -295,15 +299,17 @@ export default function NewsPage() {
                     >
                       {article.attributes.state === 1 ? <EyeOff size={14} /> : <Eye size={14} />}
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-red-400 hover:text-red-300"
-                      title="Delete"
-                      onClick={() => setDeleteTarget(article)}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-400 hover:text-red-300"
+                        title="Delete"
+                        onClick={() => setDeleteTarget(article)}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifySession } from "@/lib/firebaseAdmin";
 
 const API_BASE = process.env.API_BASE_URL || '';
 const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
@@ -32,12 +33,20 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
+  const session = await verifySession(request.cookies.get('firebaseToken')?.value);
+  if (!session || !['admin', 'editor', 'moderator'].includes(session.role ?? '')) {
+    return NextResponse.json({ error: 'Unauthorized: editor or admin access required' }, { status: 403 });
+  }
   const { id } = await params;
   const body = await request.json();
   return proxy(`updateJoomlaArticle?id=${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const session = await verifySession(request.cookies.get('firebaseToken')?.value);
+  if (!session || session.role !== 'admin') {
+    return NextResponse.json({ error: 'Unauthorized: only admins can delete articles' }, { status: 403 });
+  }
   const { id } = await params;
   return proxy(`deleteJoomlaArticle?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
