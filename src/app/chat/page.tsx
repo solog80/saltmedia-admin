@@ -61,7 +61,6 @@ export default function ProgramChatPage() {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [maximized, setMaximized] = useState(false); // hide panel -> full-width messages
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const messagePaneRef = useRef<HTMLDivElement>(null);
 
   // Track browser fullscreen so the toggle icon stays accurate.
@@ -114,10 +113,6 @@ export default function ProgramChatPage() {
     const t = setInterval(() => loadMessages(selectedRoom), POLL_MS);
     return () => clearInterval(t);
   }, [selectedRoom, loadMessages]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   // Fullscreen toggle for the whole messages area.
   const toggleFullscreen = () => {
@@ -391,7 +386,6 @@ export default function ProgramChatPage() {
                 />
               ))
             )}
-            <div ref={bottomRef} />
           </div>
 
           {/* Composer */}
