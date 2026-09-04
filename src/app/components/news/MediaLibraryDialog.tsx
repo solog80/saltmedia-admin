@@ -29,10 +29,14 @@ export default function MediaLibraryDialog({
   open,
   onClose,
   onSelect,
+  scope = "news",
+  title = "Media library",
 }: {
   open: boolean
   onClose: () => void
   onSelect: (url: string) => void
+  scope?: string
+  title?: string
 }) {
   const [folder, setFolder] = useState("")
   const [items, setItems] = useState<MediaItem[]>([])
@@ -58,9 +62,9 @@ export default function MediaLibraryDialog({
     setLoading(true)
     setError(null)
     try {
-      const qs = new URLSearchParams({ offset: String(nextOffset) })
+      const qs = new URLSearchParams({ offset: String(nextOffset), scope })
       if (targetFolder) qs.set("folder", targetFolder)
-      const res = await fetch(`/api/news/images?${qs.toString()}`, { cache: "no-store" })
+      const res = await fetch(`/api/media/images?${qs.toString()}`, { cache: "no-store" })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || "Failed to load images")
       const list: MediaItem[] = data.images ?? []
@@ -81,7 +85,7 @@ export default function MediaLibraryDialog({
       load(folder, 0, true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, folder])
+  }, [open, folder, scope])
 
   const crumbs = folder ? folder.split("/").filter(Boolean) : []
   const folderCount = items.filter((i) => i.isFolder).length
@@ -93,8 +97,9 @@ export default function MediaLibraryDialog({
     try {
       const fd = new FormData()
       fd.append("file", file)
+      fd.append("scope", scope)
       if (folder) fd.append("folder", folder)
-      const res = await fetch("/api/news/upload", { method: "POST", body: fd })
+      const res = await fetch("/api/media/upload", { method: "POST", body: fd })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || "Upload failed")
       await load(folder, 0, true)
@@ -110,7 +115,7 @@ export default function MediaLibraryDialog({
     setDeletingPath(item.path)
     setError(null)
     try {
-      const res = await fetch("/api/news/images", {
+      const res = await fetch(`/api/media/images?scope=${encodeURIComponent(scope)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: item.path }),
@@ -133,10 +138,10 @@ export default function MediaLibraryDialog({
     setError(null)
     try {
       const fullPath = folder ? `${folder}/${name}` : name
-      const res = await fetch("/api/news/folders", {
+      const res = await fetch("/api/media/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: fullPath }),
+        body: JSON.stringify({ scope, folder: fullPath }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || "Failed to create folder")
@@ -158,7 +163,7 @@ export default function MediaLibraryDialog({
         {/* Header */}
         <div className="flex-shrink-0 border-b border-white/10 px-4 pt-4 pb-3 sm:px-6 sm:pt-5 sm:pb-4">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Media library</DialogTitle>
+            <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
           </DialogHeader>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button
@@ -229,7 +234,7 @@ export default function MediaLibraryDialog({
                 className="shrink-0 rounded px-1.5 py-0.5 text-white/60 hover:bg-white/10 hover:text-white"
                 onClick={() => setFolder("")}
               >
-                news
+                {scope}
               </button>
               {crumbs.map((c, i) => (
                 <span key={i} className="flex shrink-0 items-center gap-1">
@@ -277,7 +282,7 @@ export default function MediaLibraryDialog({
                     key={item.path}
                     type="button"
                     className="group flex aspect-square flex-col items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 text-white/70 transition hover:border-white/25 hover:bg-white/10"
-                    onClick={() => setFolder(item.path.replace(/^news\/?/, "").replace(/\/$/, ""))}
+                    onClick={() => setFolder(item.path.replace(new RegExp(`^${scope}/?`), "").replace(/\/$/, ""))}
                   >
                     <div className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-xl bg-yellow-400/10 text-yellow-300/80 transition group-hover:scale-105">
                       <Folder size={22} />

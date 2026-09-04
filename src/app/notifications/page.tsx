@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/context/AuthContext';
+import LibraryImageButton from '../components/media/LibraryImageButton';
 
 interface SentNotification {
   id: string;
@@ -565,6 +566,7 @@ export default function NotificationsPage() {
                       </Button>
                       <input ref={imageFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                     </div>
+                    <LibraryImageButton scope="notifications" onSelect={(url) => setImageUrl(url)} label="Choose from library" />
                   </div>
                 </div>
 

@@ -14,6 +14,7 @@ import { useEPGStore } from '@/lib/stores/epgStore';
 import { useEPGData, useEPGSearch, useAddProgram, useUpdateProgram, useDeleteProgram } from '@/lib/hooks/useEPGData';
 import { useEventsData, useAddEvent, useUpdateEvent, useDeleteEvent } from '@/lib/hooks/useEventsData';
 import { utcToLocal, localToUtc, utcDatetimeToLocal } from '@/lib/utils/timeConversion';
+import LibraryImageButton from '../components/media/LibraryImageButton';
 
 interface Program {
   programName: string;
@@ -100,6 +101,7 @@ export default function EPGPage() {
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<ProgramFormData>({
     resolver: zodResolver(programSchema),
@@ -1006,6 +1008,7 @@ export default function EPGPage() {
                   onChange={(e) => setImagePreview(e.target.value)}
                   className="bg-white/10 border-white/20 text-white placeholder-white/40"
                 />
+                <LibraryImageButton scope="epg-programs" onSelect={(url) => setImagePreview(url)} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="add-image-landscape" className="text-white">Program Image (Landscape)</Label>
@@ -1034,6 +1037,7 @@ export default function EPGPage() {
                   onChange={(e) => setImageLandscapePreview(e.target.value)}
                   className="bg-white/10 border-white/20 text-white placeholder-white/40"
                 />
+                <LibraryImageButton scope="epg-programs" onSelect={(url) => setImageLandscapePreview(url)} />
               </div>
             </>
           )}
@@ -1053,6 +1057,7 @@ export default function EPGPage() {
                 onChange={(e) => setImagePreview(e.target.value)}
                 className="bg-white/10 border-white/20 text-white placeholder-white/40"
               />
+              <LibraryImageButton scope="epg-programs" onSelect={(url) => setImagePreview(url)} />
               {imagePreview && (
                 <img src={imagePreview} alt="Preview" className="w-24 h-24 rounded object-cover" />
               )}
@@ -1186,6 +1191,7 @@ export default function EPGPage() {
                   {...register('thumbnail')}
                   className="bg-white/10 border-white/20 text-white placeholder-white/40"
                 />
+                <LibraryImageButton scope="epg-programs" onSelect={(url) => setValue('thumbnail', url)} />
               </div>
             </>
           )}
@@ -1258,6 +1264,7 @@ export default function EPGPage() {
                   onChange={(e) => setImagePreview(e.target.value)}
                   className="bg-white/10 border-white/20 text-white placeholder-white/40"
                 />
+                <LibraryImageButton scope="epg-programs" onSelect={(url) => setImagePreview(url)} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-image-landscape" className="text-white">Program Image (Landscape)</Label>
@@ -1288,6 +1295,7 @@ export default function EPGPage() {
                   onChange={(e) => setImageLandscapePreview(e.target.value)}
                   className="bg-white/10 border-white/20 text-white placeholder-white/40"
                 />
+                <LibraryImageButton scope="epg-programs" onSelect={(url) => setImageLandscapePreview(url)} />
               </div>
             </>
           )}
@@ -1323,6 +1331,7 @@ export default function EPGPage() {
                 onChange={(e) => setImagePreview(e.target.value)}
                 className="bg-white/10 border-white/20 text-white placeholder-white/40"
               />
+              <LibraryImageButton scope="epg-programs" onSelect={(url) => setImagePreview(url)} />
             </div>
           )}
           <div className="grid gap-2">
@@ -1441,6 +1450,7 @@ export default function EPGPage() {
                   {...register('thumbnail')}
                   className="bg-white/10 border-white/20 text-white placeholder-white/40"
                 />
+                <LibraryImageButton scope="epg-programs" onSelect={(url) => setValue('thumbnail', url)} />
               </div>
             </>
           )}
@@ -1523,6 +1533,7 @@ export default function EPGPage() {
             )}
             <Label className="text-white text-xs opacity-60">…or paste an image URL</Label>
             <Input {...eventForm.register('imageUrl')} className="bg-white/10 border-white/20 text-white placeholder-white/40" placeholder="https://..." />
+            <LibraryImageButton scope="events" onSelect={(url) => eventForm.setValue('imageUrl', url)} />
           </div>
           <div className="grid gap-2">
             <Label className="text-white">Presenter</Label>
@@ -1615,6 +1626,7 @@ export default function EPGPage() {
             )}
             <Label className="text-white text-xs opacity-60">…or paste an image URL</Label>
             <Input {...eventForm.register('imageUrl')} className="bg-white/10 border-white/20 text-white placeholder-white/40" placeholder="https://..." />
+            <LibraryImageButton scope="events" onSelect={(url) => eventForm.setValue('imageUrl', url)} />
           </div>
           <div className="grid gap-2">
             <Label className="text-white">Presenter</Label>
