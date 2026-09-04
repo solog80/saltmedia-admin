@@ -52,6 +52,7 @@ const ON_DEMAND_FIREBASE_MIRROR: Record<string, string> = {
   updateShow: 'updateOnDemandShow',
   deleteShow: 'deleteOnDemandShow',
   createSfxEpisode: 'createSfxEpisode',
+  createEpisodeFromBunnyUpload: 'createSfxEpisode',
   updateEpisode: 'updateOnDemandEpisode',
 };
 
@@ -62,9 +63,20 @@ async function mirrorOnDemand(action: string, body: Record<string, unknown>, res
   // Inject the mesh-generated ids so the Firestore mirror uses the same ids.
   if (action === 'createShow' && result?.show?.id) payload.id = result.show.id;
   if (action === 'createShow' && result?.show?.bunnyGuid) payload.bunnyGuid = result.show.bunnyGuid;
-  if (action === 'createSfxEpisode' && result?.episode) {
-    if (result.episode.id) payload.id = result.episode.id;
-    if (result.episode.seasonId) payload.seasonId = result.episode.seasonId;
+  if ((action === 'createSfxEpisode' || action === 'createEpisodeFromBunnyUpload') && result?.episode) {
+    const ep = result.episode;
+    // Mesh is authoritative for ids + transcoded metadata; inject them so the
+    // Firestore mirror writes the same doc the mesh produced (no re-poll).
+    if (ep.id) payload.id = ep.id;
+    if (ep.seasonId) payload.seasonId = ep.seasonId;
+    if (ep.server) payload.server = ep.server;
+    if (ep.bunnyGuid) payload.bunnyGuid = ep.bunnyGuid;
+    if (ep.videoUrl) payload.videoUrl = ep.videoUrl;
+    if (ep.thumbnail) payload.thumbnail = ep.thumbnail;
+    if (typeof ep.duration === 'number' && ep.duration > 0) payload.duration = ep.duration;
+    if (ep.title) payload.title = ep.title;
+    if (ep.description) payload.description = ep.description;
+    if (ep.seasonTitle) payload.seasonTitle = ep.seasonTitle;
   }
   try {
     await httpsCallable(functionsEu, fnName)(payload);
@@ -671,19 +683,21 @@ function OndemandContent() {
     opts: { showId: string; title: string; description: string; seasonId?: string; seasonTitle?: string }
   ): Promise<boolean> => {
     try {
-      const createEpisodeCallable = httpsCallable(functions, 'createEpisodeFromBunnyUpload');
-      const episodePayload: any = {
+      const episodePayload: Record<string, unknown> = {
         showId: opts.showId,
         videoId: videoId,
         title: opts.title,
         description: opts.description,
+        server: 'bunny',
       };
       if (opts.seasonTitle) {
         episodePayload.seasonTitle = opts.seasonTitle;
       } else if (opts.seasonId) {
         episodePayload.seasonId = opts.seasonId;
       }
-      await createEpisodeCallable(episodePayload);
+      // Mesh-first: the mesh polls Bunny for metadata and is the authoritative
+      // writer (season + episode in Supabase); Firebase is mirrored afterwards.
+      await ondemandProxy('createEpisodeFromBunnyUpload', episodePayload);
     } catch (episodeError) {
       console.error('Failed to create episode record:', episodeError);
       setIsUploading(false);

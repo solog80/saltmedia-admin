@@ -66,6 +66,8 @@ export async function POST(request: NextRequest) {
       return proxy('deleteOnDemandEpisode', { method: 'POST', body: JSON.stringify(body) });
     case 'createSfxEpisode':
       return proxy('createSfxEpisode', { method: 'POST', body: JSON.stringify(body) });
+    case 'createEpisodeFromBunnyUpload':
+      return proxy('createEpisodeFromBunnyUpload', { method: 'POST', body: JSON.stringify(body) });
     case 'getPlaybackUrl':
       return proxy('getEpisodePlaybackUrl', { method: 'POST', body: JSON.stringify(body) });
     case 'uploadPoster':
