@@ -129,6 +129,9 @@ export default function EPGPage() {
   const [editEventDialogOpen, setEditEventDialogOpen] = React.useState(false);
   const [deleteEventDialogOpen, setDeleteEventDialogOpen] = React.useState(false);
   const [selectedEvent, setSelectedEvent] = React.useState<any>(null);
+  // Event image file → base64 data URL (uploaded to storage on save).
+  const [eventImageDataUrl, setEventImageDataUrl] = React.useState<string | null>(null);
+  const [eventImageFileName, setEventImageFileName] = React.useState<string>('');
 
 
   // Mutations
@@ -141,6 +144,33 @@ export default function EPGPage() {
   const addEventMutation = useAddEvent();
   const updateEventMutation = useUpdateEvent();
   const deleteEventMutation = useDeleteEvent();
+
+  // Event image file picker → base64 data URL (preview + upload on save).
+  const handleEventImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEventImageFileName(file.name);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setEventImageDataUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Resets the event dialog to defaults / a selected event's values.
+  const resetEventForm = (event?: any) => {
+    setEventImageDataUrl(null);
+    setEventImageFileName('');
+    eventForm.reset(event ? {
+      title: event.title,
+      imageUrl: event.imageUrl || '',
+      presenter: event.presenter || '',
+      startDate: utcDatetimeToLocal(event.startDate),
+      endDate: utcDatetimeToLocal(event.endDate),
+      platform: event.platform,
+      stations: event.stations || [],
+    } : { title: '', imageUrl: '', presenter: '', startDate: '', endDate: '', platform: 'tv', stations: [] });
+  };
 
   // Event form (separate from program form)
   const eventForm = useForm<EventFormData>({
@@ -339,6 +369,7 @@ export default function EPGPage() {
   const onAddEvent = (data: EventFormData) => {
     const eventData = {
       ...data,
+      imageUrl: eventImageDataUrl || data.imageUrl,
       startDate: localToUtc(data.startDate),
       endDate: localToUtc(data.endDate),
     };
@@ -346,7 +377,7 @@ export default function EPGPage() {
       onSuccess: () => {
         alert('Event added successfully!');
         setAddEventDialogOpen(false);
-        eventForm.reset();
+        resetEventForm();
       },
       onError: (error: any) => {
         alert(`Error: ${error.message}`);
@@ -358,6 +389,7 @@ export default function EPGPage() {
     if (!selectedEvent) return;
     const eventData = {
       ...data,
+      imageUrl: eventImageDataUrl || data.imageUrl,
       startDate: localToUtc(data.startDate),
       endDate: localToUtc(data.endDate),
     };
@@ -368,7 +400,7 @@ export default function EPGPage() {
           alert('Event updated successfully!');
           setEditEventDialogOpen(false);
           setSelectedEvent(null);
-          eventForm.reset();
+          resetEventForm();
         },
         onError: (error: any) => {
           alert(`Error: ${error.message}`);
@@ -619,7 +651,7 @@ export default function EPGPage() {
             </h2>
             <Button
               onClick={() => {
-                eventForm.reset({ title: '', imageUrl: '', presenter: '', startDate: '', endDate: '', platform: 'tv', stations: [] });
+                resetEventForm();
                 setAddEventDialogOpen(true);
               }}
               className="bg-purple-600 hover:bg-purple-700 text-white"
@@ -659,15 +691,7 @@ export default function EPGPage() {
                       <button
                         onClick={() => {
                           setSelectedEvent(event);
-                          eventForm.reset({
-                            title: event.title,
-                            imageUrl: event.imageUrl || '',
-                            presenter: event.presenter || '',
-                            startDate: utcDatetimeToLocal(event.startDate),
-                            endDate: utcDatetimeToLocal(event.endDate),
-                            platform: event.platform,
-                            stations: event.stations || [],
-                          });
+                          resetEventForm(event);
                           setEditEventDialogOpen(true);
                         }}
                         className="p-1.5 bg-blue-600/80 hover:bg-blue-700 text-white rounded text-sm transition"
@@ -1483,7 +1507,21 @@ export default function EPGPage() {
             {eventForm.formState.errors.title && <span className="text-red-400 text-xs">{eventForm.formState.errors.title.message}</span>}
           </div>
           <div className="grid gap-2">
-            <Label className="text-white">Image URL</Label>
+            <Label className="text-white">Image</Label>
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={handleEventImageChange}
+              className="cursor-pointer bg-white/10 border-white/20 text-white file:text-white file:bg-blue-600/50"
+            />
+            {eventImageDataUrl && (
+              <img
+                src={eventImageDataUrl}
+                alt="Event image preview"
+                className="w-32 h-32 rounded object-cover border border-white/20"
+              />
+            )}
+            <Label className="text-white text-xs opacity-60">…or paste an image URL</Label>
             <Input {...eventForm.register('imageUrl')} className="bg-white/10 border-white/20 text-white placeholder-white/40" placeholder="https://..." />
           </div>
           <div className="grid gap-2">
@@ -1561,7 +1599,21 @@ export default function EPGPage() {
             {eventForm.formState.errors.title && <span className="text-red-400 text-xs">{eventForm.formState.errors.title.message}</span>}
           </div>
           <div className="grid gap-2">
-            <Label className="text-white">Image URL</Label>
+            <Label className="text-white">Image</Label>
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={handleEventImageChange}
+              className="cursor-pointer bg-white/10 border-white/20 text-white file:text-white file:bg-blue-600/50"
+            />
+            {eventImageDataUrl && (
+              <img
+                src={eventImageDataUrl}
+                alt="Event image preview"
+                className="w-32 h-32 rounded object-cover border border-white/20"
+              />
+            )}
+            <Label className="text-white text-xs opacity-60">…or paste an image URL</Label>
             <Input {...eventForm.register('imageUrl')} className="bg-white/10 border-white/20 text-white placeholder-white/40" placeholder="https://..." />
           </div>
           <div className="grid gap-2">
