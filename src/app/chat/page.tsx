@@ -48,7 +48,7 @@ function maskExternal(n?: string | null): string {
 }
 
 export default function ProgramChatPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [shows, setShows] = useState<Show[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -72,9 +72,41 @@ export default function ProgramChatPage() {
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
+  // Re-sync the httpOnly firebaseToken cookie with a fresh ID token, then return
+  // true. Called when a request 403s because the cookie holds an expired token
+  // (cold open, or after the machine wakes from sleep).
+  const refreshSessionCookie = useCallback(async (): Promise<boolean> => {
+    try {
+      const fresh = await user?.getIdToken(true);
+      if (!fresh) return false;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: fresh }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }, [user]);
+
+  // Fetch with one automatic retry after refreshing the session cookie when the
+  // first attempt comes back unauthorized (403).
+  const authFetch = useCallback(
+    async (path: string, init?: RequestInit) => {
+      let res = await fetch(path, { cache: 'no-store', ...init });
+      if (res.status === 403) {
+        const refreshed = await refreshSessionCookie();
+        if (refreshed) res = await fetch(path, { cache: 'no-store', ...init });
+      }
+      return res;
+    },
+    [refreshSessionCookie]
+  );
+
   const loadShows = useCallback(async () => {
     try {
-      const res = await fetch('/api/chat', { cache: 'no-store' });
+      const res = await authFetch('/api/chat');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load lineup');
       setShows(data.shows || []);
@@ -84,12 +116,12 @@ export default function ProgramChatPage() {
     } finally {
       setLoadingShows(false);
     }
-  }, []);
+  }, [authFetch]);
 
   const loadMessages = useCallback(async (roomId: string) => {
     setLoadingMsgs(true);
     try {
-      const res = await fetch(`/api/chat?roomId=${encodeURIComponent(roomId)}`, { cache: 'no-store' });
+      const res = await authFetch(`/api/chat?roomId=${encodeURIComponent(roomId)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load messages');
       setMessages(data.messages || []);
@@ -98,16 +130,20 @@ export default function ProgramChatPage() {
     } finally {
       setLoadingMsgs(false);
     }
-  }, []);
+  }, [authFetch]);
 
+  // Wait for the auth provider to finish syncing the session cookie before the
+  // first fetch so a cold open / stale cookie doesn't 403 before a refresh.
   useEffect(() => {
+    if (authLoading) return;
     loadShows();
-  }, [loadShows]);
+  }, [authLoading, loadShows]);
 
   useEffect(() => {
+    if (authLoading) return;
     const t = setInterval(loadShows, 30000);
     return () => clearInterval(t);
-  }, [loadShows]);
+  }, [authLoading, loadShows]);
 
   useEffect(() => {
     if (!selectedRoom) return;
@@ -144,7 +180,7 @@ export default function ProgramChatPage() {
       if (replyTarget?.source === 'sms' && replyTarget.sender_external_id) {
         body.targetNumber = replyTarget.sender_external_id;
       }
-      const res = await fetch('/api/chat', {
+      const res = await authFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
