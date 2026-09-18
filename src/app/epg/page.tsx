@@ -171,7 +171,8 @@ export default function EPGPage() {
       endDate: utcDatetimeToLocal(event.endDate),
       platform: event.platform,
       stations: event.stations || [],
-    } : { title: '', imageUrl: '', presenter: '', startDate: '', endDate: '', platform: 'tv', stations: [] });
+      enableChat: event.enableChat ?? true,
+    } : { title: '', imageUrl: '', presenter: '', startDate: '', endDate: '', platform: 'tv', stations: [], enableChat: true });
   };
 
   // Event form (separate from program form)
@@ -185,6 +186,7 @@ export default function EPGPage() {
       endDate: '',
       platform: 'tv',
       stations: [],
+      enableChat: true,
     },
   });
 
@@ -739,7 +741,7 @@ export default function EPGPage() {
                           <span>→</span>
                           <span>{formatDate(event.endDate)}</span>
                         </div>
-                        <div className="flex gap-1 mt-1.5">
+                        <div className="flex gap-1.5 mt-1.5 items-center flex-wrap">
                           <span className={`px-2 py-0.5 text-xs rounded ${
                             event.platform === 'both'
                               ? 'bg-green-600/30 text-green-300'
@@ -748,6 +750,13 @@ export default function EPGPage() {
                               : 'bg-orange-600/30 text-orange-300'
                           }`}>
                             {event.platform === 'both' ? '📺📻 Both' : event.platform === 'tv' ? '📺 TV' : '📻 Radio'}
+                          </span>
+                          <span className={`px-2 py-0.5 text-xs rounded ${
+                            event.enableChat !== false
+                              ? 'bg-emerald-600/30 text-emerald-300'
+                              : 'bg-red-600/30 text-red-300'
+                          }`}>
+                            {event.enableChat !== false ? '💬 Chat On' : '🔇 Chat Off'}
                           </span>
                         </div>
                       </div>
@@ -1560,6 +1569,19 @@ export default function EPGPage() {
             </select>
           </div>
 
+          <div className="flex items-center gap-2.5 pt-1">
+            <input
+              type="checkbox"
+              id="add-event-enable-chat"
+              checked={eventForm.watch('enableChat') ?? true}
+              onChange={(e) => eventForm.setValue('enableChat', e.target.checked)}
+              className="w-4 h-4 rounded bg-white/10 border-white/20 text-blue-600 cursor-pointer"
+            />
+            <Label htmlFor="add-event-enable-chat" className="text-white cursor-pointer font-medium text-sm">
+              💬 Enable Live Chat for this Event
+            </Label>
+          </div>
+
           {showStationPicker && tvStations.length > 0 && (
             <div className="grid gap-2">
               <Label className="text-white">TV Stations (leave empty for all)</Label>
@@ -1651,6 +1673,19 @@ export default function EPGPage() {
               <option value="radio">📻 Radio Only</option>
               <option value="both">📺📻 Both</option>
             </select>
+          </div>
+
+          <div className="flex items-center gap-2.5 pt-1">
+            <input
+              type="checkbox"
+              id="edit-event-enable-chat"
+              checked={eventForm.watch('enableChat') ?? true}
+              onChange={(e) => eventForm.setValue('enableChat', e.target.checked)}
+              className="w-4 h-4 rounded bg-white/10 border-white/20 text-blue-600 cursor-pointer"
+            />
+            <Label htmlFor="edit-event-enable-chat" className="text-white cursor-pointer font-medium text-sm">
+              💬 Enable Live Chat for this Event
+            </Label>
           </div>
 
           {showStationPicker && tvStations.length > 0 && (

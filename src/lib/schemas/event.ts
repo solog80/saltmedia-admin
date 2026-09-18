@@ -8,6 +8,7 @@ export const eventSchema = z.object({
   endDate: z.string().min(1, 'End date is required'),
   platform: z.enum(['tv', 'radio', 'both']),
   stations: z.array(z.string()).optional(),
+  enableChat: z.boolean().default(true).optional(),
 });
 
 export type EventFormData = z.infer<typeof eventSchema>;

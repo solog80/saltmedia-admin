@@ -22,6 +22,7 @@ export interface EventDocument {
   startDate: string;
   endDate: string;
   platform: 'tv' | 'radio' | 'both';
+  enableChat?: boolean;
   createdAt?: string;
 }
 
@@ -54,6 +55,7 @@ export const useAddEvent = () => {
       startDate: string;
       endDate: string;
       platform: string;
+      enableChat?: boolean;
     }) => {
       const id = crypto.randomUUID();
       const result = await request('/api/events', {
@@ -79,6 +81,7 @@ export const useUpdateEvent = () => {
       startDate?: string;
       endDate?: string;
       platform?: string;
+      enableChat?: boolean;
     }) => {
       const result = await request('/api/events', {
         method: 'POST',
