@@ -1,30 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const EDGE_STATS = 'http://198.204.224.170:8099';
+const API_BASE = process.env.API_BASE_URL || 'https://edge.solofx.net/api/v1';
+const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const action = searchParams.get('action');
     const path = searchParams.get('path') || 'viewers';
     const minutes = searchParams.get('minutes') || '5';
     const countries = searchParams.get('countries') || '1';
     const filterDc = searchParams.get('filter_dc') || '1';
 
     let url: string;
-    if (path === 'peak') {
-      url = `${EDGE_STATS}/api/viewers/peak?minutes=${minutes}`;
+    if (action === 'stats') {
+      url = `${API_BASE}/getViewerStats?minutes=${minutes}`;
+    } else if (action === 'countries') {
+      url = `${API_BASE}/getViewerCountries?minutes=${minutes}`;
+    } else if (action === 'peak_bq') {
+      url = `${API_BASE}/getViewerPeak${minutes ? `?minutes=${minutes}` : ''}`;
     } else {
-      url = `${EDGE_STATS}/api/viewers?minutes=${minutes}&countries=${countries}&filter_dc=${filterDc}`;
+      url = `${API_BASE}/getLiveTvStats?path=${path}&minutes=${minutes}&countries=${countries}&filter_dc=${filterDc}`;
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (SERVICE_ROLE_KEY) {
+      headers['apikey'] = SERVICE_ROLE_KEY;
+      headers['Authorization'] = `Bearer ${SERVICE_ROLE_KEY}`;
     }
 
     const response = await fetch(url, {
+      method: 'GET',
+      headers,
       cache: 'no-store',
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
       return NextResponse.json(
-        { error: `Edge stats API error: ${response.status}` },
+        { error: `Mesh stats API error: ${response.status}`, details: errorText },
         { status: response.status }
       );
     }

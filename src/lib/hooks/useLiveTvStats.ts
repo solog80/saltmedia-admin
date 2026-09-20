@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { httpsCallable, getFunctions } from 'firebase/functions';
 import { utcToLocal } from '@/lib/utils/timeConversion';
 
 interface StreamCount {
@@ -27,6 +26,11 @@ export interface ViewerIsp {
 
 export interface LiveViewers {
   viewers: number;
+  total_connections?: number;
+  llhls_connections?: number;
+  webrtc_connections?: number;
+  avg_throughput_out?: number;
+  avg_throughput_in?: number;
   ipv4: number;
   ipv6: number;
   window_minutes: number;
@@ -70,87 +74,56 @@ const DAY_NAMES = [
   'Saturday',
 ];
 
-const STREAM_STATION: Record<string, string> = {
-  stream: 'Salt TV One',
-  stream2: 'Salt TV Two',
-};
-
-// BigQuery returns minute as {value: "ISO"} Timestamp objects; normalize to string
-export const normalizeMinute = (minute: string | { value: string }): string => {
-  if (!minute) return '';
-  return typeof minute === 'string' ? minute : minute.value || '';
-};
-
-const toMinutesOfDay = (hhmm: string): number => {
-  if (!hhmm) return -1;
-  const [h, m] = hhmm.split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return -1;
-  return h * 60 + m;
-};
-
-// Find the EPG show airing at a given UTC minute for a station's programs.
-// Programs are stored in UTC HH:MM. Handles midnight crossover (end < start).
-export const findShowForMinute = (
-  programs: EPGProgram[],
-  minuteIso: string
-): { show: string; startUtc: string; endUtc: string } | null => {
-  const date = new Date(minuteIso);
-  if (Number.isNaN(date.getTime())) return null;
-
-  const dayName = DAY_NAMES[date.getUTCDay()];
-  const minutes = date.getUTCHours() * 60 + date.getUTCMinutes();
-
-  for (const p of programs) {
-    const programDays = p.days
-      ? p.days.split(',').map((d) => d.trim())
-      : [];
-    if (!programDays.includes(dayName)) continue;
-
-    const start = toMinutesOfDay(p.startTime);
-    const end = toMinutesOfDay(p.endTime);
-    if (start < 0 || end < 0) continue;
-
-    // Normal slot: start < end (same day)
-    if (start < end) {
-      if (minutes >= start && minutes < end) {
-        return { show: p.programName, startUtc: p.startTime, endUtc: p.endTime };
-      }
-    }
-    // Midnight crossover: started yesterday, still airing today before `end`
-    else if (minutes < end) {
-      return { show: p.programName, startUtc: p.startTime, endUtc: p.endTime };
-    }
+export const getStationForStream = (streamName: string): string | null => {
+  if (!streamName) return null;
+  const clean = streamName.toLowerCase().replace(/^app\//, '');
+  if (clean.includes('stream2') || clean.includes('salt2')) {
+    return 'Salt TV Two';
   }
+  if (clean.includes('stream') || clean.includes('salt1')) {
+    return 'Salt TV One';
+  }
+  return null;
+};
 
+export const getStreamKey = (streamName: string): 'stream' | 'stream2' | null => {
+  if (!streamName) return null;
+  const clean = streamName.toLowerCase().replace(/^app\//, '');
+  if (clean.includes('stream2') || clean.includes('salt2')) {
+    return 'stream2';
+  }
+  if (clean.includes('stream') || clean.includes('salt1')) {
+    return 'stream';
+  }
   return null;
 };
 
 // Map every per-minute viewer stat row to the EPG show airing on that stream.
-// Only stream / stream2 are real stations (Salt TV One / Two); everything else
-// (empty stream, legacy /hls, bots) is excluded from the show breakdown.
+// Supports stream/stream2, app/stream/abr.m3u8, stream2/abr.m3u8, etc.
 export const mapViewerStatsToShows = (
   stats: ViewerStat[],
   tv: Record<string, { programs: EPGProgram[] }>
 ): ShowViewerStat[] => {
   return stats
-    .filter((s) => STREAM_STATION[s.stream])
     .map((s) => {
+      const station = getStationForStream(s.stream);
+      if (!station) return null;
       const minute = normalizeMinute(s.minute);
-      const station = STREAM_STATION[s.stream];
       const stationData = tv[station];
       const show = stationData
         ? findShowForMinute(stationData.programs || [], minute)
         : null;
+      const key = getStreamKey(s.stream) || 'stream';
       return {
         show: show?.show || 'Off-Air / Unknown',
-        stream: s.stream || 'unknown',
+        stream: key,
         minute,
         viewers: s.viewers,
         showStartUtc: show?.startUtc,
         showEndUtc: show?.endUtc,
       };
     })
-    .filter((r) => r.minute && r.viewers > 0);
+    .filter((r): r is ShowViewerStat => r !== null && Boolean(r.minute) && r.viewers > 0);
 };
 
 // Aggregate show-mapped stats into per-show totals: total + avg viewers.
@@ -333,14 +306,15 @@ export const useLivePeak = (minutes = 60) => {
   });
 };
 
-// History + country breakdown from BigQuery via Firebase callable
+// History + country breakdown from Mesh API
 export const useViewerStats = (minutes = 30) => {
   return useQuery({
     queryKey: ['viewer-stats-bq', minutes],
     queryFn: async (): Promise<ViewerStat[]> => {
-      const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'getViewerStats');
-      const result = (await fn({ minutes })) as { data: { viewers: ViewerStat[] } };
-      return result.data.viewers || [];
+      const res = await fetch(`/api/live-tv-stats?action=stats&minutes=${minutes}`);
+      if (!res.ok) throw new Error(`Viewer stats returned ${res.status}`);
+      const data = await res.json();
+      return data.viewers || [];
     },
     staleTime: 60000,
   });
@@ -350,19 +324,17 @@ export const useViewerCountries = (minutes = 30) => {
   return useQuery({
     queryKey: ['viewer-countries-bq', minutes],
     queryFn: async (): Promise<{ countries: ViewerCountry[]; isps: ViewerIsp[] }> => {
-      const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'getViewerCountries');
-      const result = (await fn({ minutes })) as {
-        data: {
-          countries: { country: string; country_code?: string; viewers: number }[];
-          isps: ViewerIsp[];
-        };
-      };
-      const countries: ViewerCountry[] = (result.data.countries || []).map((c) => ({
-        code: c.country_code || c.country || '',
-        name: c.country || '',
-        viewers: c.viewers,
-      }));
-      return { countries, isps: result.data.isps || [] };
+      const res = await fetch(`/api/live-tv-stats?action=countries&minutes=${minutes}`);
+      if (!res.ok) throw new Error(`Viewer countries returned ${res.status}`);
+      const data = await res.json();
+      const countries: ViewerCountry[] = (data.countries || []).map(
+        (c: { country?: string; code?: string; viewers: number }) => ({
+          code: c.code || c.country || '',
+          name: c.country || '',
+          viewers: c.viewers,
+        })
+      );
+      return { countries, isps: data.isps || [] };
     },
     staleTime: 60000,
   });
@@ -372,9 +344,11 @@ export const useViewerPeak = (minutes: number | null = null) => {
   return useQuery({
     queryKey: ['viewer-peak-bq', minutes],
     queryFn: async (): Promise<ViewerPeak> => {
-      const fn = httpsCallable(getFunctions(undefined, 'europe-west1'), 'getViewerPeak');
-      const result = (await fn({ minutes: minutes ?? null })) as { data: ViewerPeak };
-      return result.data;
+      const res = await fetch(
+        `/api/live-tv-stats?action=peak_bq${minutes ? `&minutes=${minutes}` : ''}`
+      );
+      if (!res.ok) throw new Error(`Viewer peak returned ${res.status}`);
+      return await res.json();
     },
     staleTime: 60000,
   });

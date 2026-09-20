@@ -27,6 +27,8 @@ import {
   aggregateViewerByShowAndStream,
   showTrendSeries,
   autoBucketMinutes,
+  getStreamKey,
+  getStationForStream,
 } from '@/lib/hooks/useLiveTvStats';
 
 const StatCard = ({
@@ -155,8 +157,21 @@ export default function LiveTvStatsPage() {
 
   const streamLabels = liveData
     ? Object.entries(liveData.streams || {})
-        .filter(([name]) => STREAM_STATION_KEYS.has(name.replace('app/', '')))
-        .map(([name, count]) => ({ name: name || 'Unknown', viewers: count }))
+        .map(([name, count]) => {
+          const station = getStationForStream(name);
+          const key = getStreamKey(name);
+          return { key, name: station || name, viewers: count };
+        })
+        .filter((item): item is { key: string; name: string; viewers: number } => Boolean(item.key))
+        .reduce((acc, curr) => {
+          const existing = acc.find((x) => x.name === curr.name);
+          if (existing) {
+            existing.viewers += curr.viewers;
+          } else {
+            acc.push({ ...curr });
+          }
+          return acc;
+        }, [] as { key: string; name: string; viewers: number }[])
         .sort((a, b) => b.viewers - a.viewers)
     : [];
 
@@ -212,11 +227,22 @@ export default function LiveTvStatsPage() {
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           icon={Users}
-          label="Live Viewers"
-          value={liveData?.viewers ?? '—'}
-          subtitle={`Last ${liveData?.window_minutes || 5} minutes (IPv4: ${liveData?.ipv4 ?? 0}, IPv6: ${liveData?.ipv6 ?? 0})`}
+          label="Live Concurrent Sockets"
+          value={liveData?.total_connections ?? liveData?.viewers ?? '—'}
+          subtitle={`LLHLS: ${liveData?.llhls_connections ?? 0} · WebRTC: ${liveData?.webrtc_connections ?? 0}`}
           color="red"
           live
+        />
+        <StatCard
+          icon={Activity}
+          label="Outbound Bandwidth"
+          value={
+            liveData?.avg_throughput_out
+              ? `${(liveData.avg_throughput_out * 8 / 1000000).toFixed(2)} Mbps`
+              : '0 Mbps'
+          }
+          subtitle="Real-time video egress bitrate"
+          color="cyan"
         />
         <StatCard
           icon={TrendingUp}
@@ -228,13 +254,6 @@ export default function LiveTvStatsPage() {
               : 'No samples yet'
           }
           color="orange"
-        />
-        <StatCard
-          icon={MonitorPlay}
-          label="Current (BigQuery)"
-          value={bqPeak.data?.current_viewers ?? '—'}
-          subtitle="Distinct viewers, last 5 min"
-          color="cyan"
         />
         <StatCard
           icon={Globe}
