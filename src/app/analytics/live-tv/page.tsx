@@ -117,7 +117,6 @@ export default function LiveTvStatsPage() {
   const livePeak = useLivePeak(60);
   const history = useViewerStats(historyMinutes);
   const countries = useViewerCountries(historyMinutes);
-  const bqPeak = useViewerPeak(60);
   const { data: epgResponse } = useEPGData();
 
   const isLoading = live.isLoading || livePeak.isLoading;
@@ -157,21 +156,12 @@ export default function LiveTvStatsPage() {
 
   const streamLabels = liveData
     ? Object.entries(liveData.streams || {})
+        .filter(([name]) => !name.includes('/') && (name === 'stream' || name === 'stream2'))
         .map(([name, count]) => {
           const station = getStationForStream(name);
-          const key = getStreamKey(name);
+          const key = getStreamKey(name) || '';
           return { key, name: station || name, viewers: count };
         })
-        .filter((item): item is { key: string; name: string; viewers: number } => item.key !== null)
-        .reduce((acc, curr) => {
-          const existing = acc.find((x) => x.name === curr.name);
-          if (existing) {
-            existing.viewers += curr.viewers;
-          } else {
-            acc.push({ ...curr });
-          }
-          return acc;
-        }, [] as { key: string; name: string; viewers: number }[])
         .sort((a, b) => b.viewers - a.viewers)
     : [];
 
@@ -257,11 +247,11 @@ export default function LiveTvStatsPage() {
         <StatCard
           icon={TrendingUp}
           label="Peak Viewers (60 min)"
-          value={peakData?.peak_viewers ?? '—'}
+          value={peakData?.peak_viewers ?? liveData?.viewers ?? '—'}
           subtitle={
             peakData?.peak_time
-              ? `Lifetime Peak: ${peakData.peak_viewers}`
-              : 'No samples yet'
+              ? `Max concurrent in 60m window`
+              : 'Live Varnish 30s Peak'
           }
           color="orange"
         />
