@@ -162,7 +162,7 @@ export default function LiveTvStatsPage() {
           const key = getStreamKey(name);
           return { key, name: station || name, viewers: count };
         })
-        .filter((item): item is { key: string; name: string; viewers: number } => Boolean(item.key))
+        .filter((item): item is { key: string; name: string; viewers: number } => item.key !== null)
         .reduce((acc, curr) => {
           const existing = acc.find((x) => x.name === curr.name);
           if (existing) {
@@ -174,6 +174,16 @@ export default function LiveTvStatsPage() {
         }, [] as { key: string; name: string; viewers: number }[])
         .sort((a, b) => b.viewers - a.viewers)
     : [];
+
+  const getFlagEmoji = (code: string) => {
+    if (!code || code.length !== 2) return '🌐';
+    const upper = code.toUpperCase();
+    if (upper.length !== 2) return '🌐';
+    const codePoints = upper
+      .split('')
+      .map((char) => 127397 + char.charCodeAt(0));
+    return String.fromCodePoint(...codePoints);
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -187,7 +197,7 @@ export default function LiveTvStatsPage() {
           </h1>
           <p className="text-white/60 flex items-center gap-2">
             <Activity size={16} />
-            Real-time viewer counts from the OME edge, plus BigQuery history
+            Real-time 1:1 concurrent viewers from Varnish (30s window). CGNAT & Office Wi-Fi immune.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -219,7 +229,7 @@ export default function LiveTvStatsPage() {
             {error instanceof Error ? error.message : 'Live edge stats unavailable'}
           </p>
           <p className="text-white/40 text-xs mt-2">
-            Historical BigQuery data below may still be available.
+            Historical database data below may still be available.
           </p>
         </div>
       )}
@@ -227,9 +237,9 @@ export default function LiveTvStatsPage() {
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           icon={Users}
-          label="Live Concurrent Sockets"
-          value={liveData?.total_connections ?? liveData?.viewers ?? '—'}
-          subtitle={`LLHLS: ${liveData?.llhls_connections ?? 0} · WebRTC: ${liveData?.webrtc_connections ?? 0}`}
+          label="Live Viewers (Varnish 30s)"
+          value={liveData?.viewers ?? liveData?.total_connections ?? '—'}
+          subtitle={`Salt TV One: ${liveData?.streams?.['stream'] ?? 0} · Salt TV Two: ${liveData?.streams?.['stream2'] ?? 0}`}
           color="red"
           live
         />
@@ -246,11 +256,11 @@ export default function LiveTvStatsPage() {
         />
         <StatCard
           icon={TrendingUp}
-          label="Peak (60 min)"
+          label="Peak Viewers (60 min)"
           value={peakData?.peak_viewers ?? '—'}
           subtitle={
             peakData?.peak_time
-              ? new Date(peakData.peak_time).toLocaleString()
+              ? `Lifetime Peak: ${peakData.peak_viewers}`
               : 'No samples yet'
           }
           color="orange"
@@ -259,7 +269,7 @@ export default function LiveTvStatsPage() {
           icon={Globe}
           label="Countries"
           value={countries.data?.countries?.length ?? '—'}
-          subtitle="Distinct countries in window"
+          subtitle="Distinct active countries"
           color="purple"
         />
       </div>
@@ -268,7 +278,7 @@ export default function LiveTvStatsPage() {
         <div className="frosted-glass p-6 border border-white/10 rounded-lg">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <MonitorPlay size={18} className="text-blue-400" />
-            Live Streams
+            Live Streams (Varnish 30s)
           </h2>
           {streamLabels.length > 0 ? (
             streamLabels.map((s) => (
@@ -281,11 +291,11 @@ export default function LiveTvStatsPage() {
               />
             ))
           ) : (
-            <p className="text-white/40 text-sm">No viewers in the current window.</p>
+            <p className="text-white/40 text-sm">No viewers in the current 30s window.</p>
           )}
           <div className="mt-4 pt-4 border-t border-white/10">
             <p className="text-xs text-white/40">
-              {liveData?.excluded_datacenters_count || 0} datacenter IPs excluded
+              Varnish log ring sliding window aggregator
             </p>
           </div>
         </div>
@@ -302,7 +312,7 @@ export default function LiveTvStatsPage() {
               .map((c) => (
                 <BarRow
                   key={c.name}
-                  label={c.name}
+                  label={`${getFlagEmoji(c.code)} ${c.name}`}
                   value={c.viewers}
                   max={maxCountry}
                   color="bg-purple-500"
@@ -322,7 +332,7 @@ export default function LiveTvStatsPage() {
             countries.data.isps.slice(0, 8).map((i) => (
               <BarRow
                 key={`${i.code}-${i.isp}`}
-                label={`${i.isp} (${i.code || '—'})`}
+                label={`${getFlagEmoji(i.code)} ${i.isp}`}
                 value={i.viewers}
                 max={maxIsp}
                 color="bg-cyan-500"
