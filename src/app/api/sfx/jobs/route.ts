@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const SFX_API = "https://api.solofx.net"
-const SFX_API_KEY = process.env.SFX_API_KEY
+const SFX_API_KEY = (process.env.SFX_API_KEY || "").trim()
 
 export async function GET(request: NextRequest) {
   try {

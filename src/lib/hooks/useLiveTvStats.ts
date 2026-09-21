@@ -98,32 +98,69 @@ export const getStreamKey = (streamName: string): 'stream' | 'stream2' | null =>
   return null;
 };
 
+export const normalizeMinute = (isoStr: string): string => {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    d.setSeconds(0, 0);
+    return d.toISOString();
+  } catch {
+    return isoStr;
+  }
+};
+
+export const findShowForMinute = (
+  programs: EPGProgram[],
+  minuteIso: string
+): { show: string; startUtc: string; endUtc: string } | null => {
+  if (!programs || !programs.length || !minuteIso) return null;
+  const targetTime = new Date(minuteIso).getTime();
+  if (isNaN(targetTime)) return null;
+
+  for (const p of programs) {
+    const start = new Date(p.startTime).getTime();
+    const end = new Date(p.endTime).getTime();
+    if (!isNaN(start) && !isNaN(end) && targetTime >= start && targetTime < end) {
+      return {
+        show: p.programName,
+        startUtc: p.startTime,
+        endUtc: p.endTime,
+      };
+    }
+  }
+  return null;
+};
+
 // Map every per-minute viewer stat row to the EPG show airing on that stream.
 // Supports stream/stream2, app/stream/abr.m3u8, stream2/abr.m3u8, etc.
 export const mapViewerStatsToShows = (
   stats: ViewerStat[],
   tv: Record<string, { programs: EPGProgram[] }>
 ): ShowViewerStat[] => {
-  return stats
-    .map((s) => {
-      const station = getStationForStream(s.stream);
-      if (!station) return null;
-      const minute = normalizeMinute(s.minute);
-      const stationData = tv[station];
-      const show = stationData
-        ? findShowForMinute(stationData.programs || [], minute)
-        : null;
-      const key = getStreamKey(s.stream) || 'stream';
-      return {
+  if (!stats || !Array.isArray(stats)) return [];
+  const results: ShowViewerStat[] = [];
+  for (const s of stats) {
+    const station = getStationForStream(s.stream);
+    if (!station) continue;
+    const minute = normalizeMinute(s.minute);
+    const stationData = tv ? tv[station] : undefined;
+    const show = stationData
+      ? findShowForMinute(stationData.programs || [], minute)
+      : null;
+    const key = getStreamKey(s.stream) || 'stream';
+    if (minute && s.viewers > 0) {
+      results.push({
         show: show?.show || 'Off-Air / Unknown',
         stream: key,
         minute,
         viewers: s.viewers,
         showStartUtc: show?.startUtc,
         showEndUtc: show?.endUtc,
-      };
-    })
-    .filter((r): r is ShowViewerStat => r !== null && Boolean(r.minute) && r.viewers > 0);
+      });
+    }
+  }
+  return results;
 };
 
 // Aggregate show-mapped stats into per-show totals: total + avg viewers.
@@ -295,14 +332,14 @@ export const useLivePeak = (minutes = 60) => {
   return useQuery({
     queryKey: ['live-peak', minutes],
     queryFn: async (): Promise<ViewerPeak> => {
-      const res = await fetch(`/api/live-tv-stats?path=peak&minutes=${minutes}`);
+      const res = await fetch(`/api/live-tv-stats?action=peak_bq&minutes=${minutes}`);
       if (!res.ok) throw new Error(`Live peak returned ${res.status}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       return data;
     },
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 };
 
