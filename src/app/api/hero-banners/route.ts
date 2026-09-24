@@ -29,7 +29,20 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const payload = Array.isArray(body) ? body : [body];
+    const items = Array.isArray(body) ? body : [body];
+    const payload = items.map((item: any) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description || '',
+      image_url: item.image_url || item.imageUrl || '',
+      video_url: item.video_url || item.videoUrl || null,
+      show_name: item.show_name || item.showName || null,
+      show_id: item.show_id || item.showId || null,
+      platform: item.platform || null,
+      days: item.days || '',
+      active: item.active !== false,
+      position: item.position ?? item.order ?? 0,
+    }));
 
     const res = await fetch(`${MESH_API_URL}/hero_banners?on_conflict=id`, {
       method: 'POST',

@@ -92,7 +92,6 @@ async function saveMeshBanner(bannerData: any): Promise<boolean> {
       days: bannerData.days || '',
       active: bannerData.active !== false,
       position: bannerData.order || 0,
-      updated_at: new Date().toISOString(),
     };
 
     const res = await fetch('/api/hero-banners', {
