@@ -46,6 +46,86 @@ interface HeroBanner {
   order?: number;
 }
 
+const MESH_API_URL = process.env.NEXT_PUBLIC_MESH_API_URL || 'https://edge.solofx.net/rest/v1';
+const MESH_ANON_KEY = process.env.NEXT_PUBLIC_MESH_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg3MzM2Mjk0LCJleHAiOjE5NDUwMTYyOTR9.9YCCl_oRCYHQIR3eAhUeLF-SiBqGIxaT9WqCS-YFtNw';
+
+const MESH_SERVICE_KEY = process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNzg3MzM2Mjk0LCJleHAiOjE5NDUwMTYyOTR9.ahzM4MIlGI6rkukPDvIQH0HkPx4dU95Pdn-Ewl-9C4s';
+
+const meshHeaders = {
+  'Content-Type': 'application/json',
+  'apikey': MESH_ANON_KEY,
+  'Authorization': `Bearer ${MESH_ANON_KEY}`,
+};
+
+const meshWriteHeaders = {
+  'Content-Type': 'application/json',
+  'apikey': MESH_SERVICE_KEY,
+  'Authorization': `Bearer ${MESH_SERVICE_KEY}`,
+};
+
+async function fetchMeshBanners(): Promise<HeroBanner[] | null> {
+  try {
+    const res = await fetch(`${MESH_API_URL}/rpc/get_hero_banners`, {
+      method: 'POST',
+      headers: meshHeaders,
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && Array.isArray(data.banners)) {
+      return data.banners;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[Mesh Banners] fetch failed:', e);
+    return null;
+  }
+}
+
+async function saveMeshBanner(bannerData: any): Promise<boolean> {
+  try {
+    const payload = [{
+      id: bannerData.id,
+      title: bannerData.title,
+      description: bannerData.description || '',
+      image_url: bannerData.imageUrl,
+      video_url: bannerData.videoUrl || null,
+      show_name: bannerData.showName || null,
+      show_id: bannerData.showId || null,
+      platform: bannerData.platform || null,
+      days: bannerData.days || '',
+      active: bannerData.active !== false,
+      position: bannerData.order || 0,
+      updated_at: new Date().toISOString(),
+    }];
+
+    const res = await fetch(`${MESH_API_URL}/hero_banners?on_conflict=id`, {
+      method: 'POST',
+      headers: {
+        ...meshWriteHeaders,
+        'Prefer': 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[Mesh Banners] save failed:', e);
+    return false;
+  }
+}
+
+async function deleteMeshBanner(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${MESH_API_URL}/hero_banners?id=eq.${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: meshWriteHeaders,
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[Mesh Banners] delete failed:', e);
+    return false;
+  }
+}
+
 export default function HeroBannersPage() {
   const { user, loading } = useAuth();
 
@@ -90,6 +170,16 @@ export default function HeroBannersPage() {
     setIsLoading(true);
     setError(null);
     try {
+      // 1. Try Supabase Mesh PRIMARY
+      const meshBanners = await fetchMeshBanners();
+      if (meshBanners) {
+        setBanners(meshBanners);
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Fallback to Firebase
+      console.warn('Falling back to Firebase getHeroBanners');
       const fn = httpsCallable(functionsEu, 'getHeroBanners');
       const result = await fn() as any;
       setBanners(result.data.banners || []);
@@ -134,9 +224,9 @@ export default function HeroBannersPage() {
     if (!formTitle || !formImageUrl) return;
     setSaving(true);
     try {
-      const fn = httpsCallable(functionsEu, 'saveHeroBanner');
-      await fn({
-        id: editing?.id || null,
+      const bannerId = editing?.id || `banner_${Date.now()}`;
+      const payload = {
+        id: bannerId,
         title: formTitle,
         description: formDescription,
         imageUrl: formImageUrl,
@@ -147,7 +237,19 @@ export default function HeroBannersPage() {
         days: formDays,
         active: formActive,
         order: formOrder,
-      });
+      };
+
+      // 1. Write to Supabase Mesh (PRIMARY)
+      await saveMeshBanner(payload);
+
+      // 2. Write to Firebase Cloud Function (FALLBACK / BACKUP)
+      try {
+        const fn = httpsCallable(functionsEu, 'saveHeroBanner');
+        await fn(payload);
+      } catch (fbErr: any) {
+        console.warn('Firebase saveHeroBanner fallback warning:', fbErr.message);
+      }
+
       setEditOpen(false);
       await loadBanners();
     } catch (err: any) {
@@ -160,8 +262,17 @@ export default function HeroBannersPage() {
   async function handleDelete() {
     if (!deleteTarget) return;
     try {
-      const fn = httpsCallable(functionsEu, 'deleteHeroBanner');
-      await fn({ id: deleteTarget.id });
+      // 1. Delete from Supabase Mesh (PRIMARY)
+      await deleteMeshBanner(deleteTarget.id);
+
+      // 2. Delete from Firebase (FALLBACK / BACKUP)
+      try {
+        const fn = httpsCallable(functionsEu, 'deleteHeroBanner');
+        await fn({ id: deleteTarget.id });
+      } catch (fbErr: any) {
+        console.warn('Firebase deleteHeroBanner fallback warning:', fbErr.message);
+      }
+
       setDeleteOpen(false);
       await loadBanners();
     } catch (err: any) {
