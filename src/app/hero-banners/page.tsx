@@ -65,10 +65,7 @@ const meshWriteHeaders = {
 
 async function fetchMeshBanners(): Promise<HeroBanner[] | null> {
   try {
-    const res = await fetch(`${MESH_API_URL}/rpc/get_hero_banners`, {
-      method: 'POST',
-      headers: meshHeaders,
-    });
+    const res = await fetch('/api/hero-banners', { method: 'GET' });
     if (!res.ok) return null;
     const data = await res.json();
     if (data && Array.isArray(data.banners)) {
@@ -83,7 +80,7 @@ async function fetchMeshBanners(): Promise<HeroBanner[] | null> {
 
 async function saveMeshBanner(bannerData: any): Promise<boolean> {
   try {
-    const payload = [{
+    const payload = {
       id: bannerData.id,
       title: bannerData.title,
       description: bannerData.description || '',
@@ -96,14 +93,11 @@ async function saveMeshBanner(bannerData: any): Promise<boolean> {
       active: bannerData.active !== false,
       position: bannerData.order || 0,
       updated_at: new Date().toISOString(),
-    }];
+    };
 
-    const res = await fetch(`${MESH_API_URL}/hero_banners?on_conflict=id`, {
+    const res = await fetch('/api/hero-banners', {
       method: 'POST',
-      headers: {
-        ...meshWriteHeaders,
-        'Prefer': 'resolution=merge-duplicates,return=minimal',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     return res.ok;
@@ -115,9 +109,8 @@ async function saveMeshBanner(bannerData: any): Promise<boolean> {
 
 async function deleteMeshBanner(id: string): Promise<boolean> {
   try {
-    const res = await fetch(`${MESH_API_URL}/hero_banners?id=eq.${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/hero-banners?id=${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      headers: meshWriteHeaders,
     });
     return res.ok;
   } catch (e) {
