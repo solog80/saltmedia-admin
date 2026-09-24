@@ -49,7 +49,7 @@ interface HeroBanner {
 const MESH_API_URL = process.env.NEXT_PUBLIC_MESH_API_URL || 'https://edge.solofx.net/rest/v1';
 const MESH_ANON_KEY = process.env.NEXT_PUBLIC_MESH_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg3MzM2Mjk0LCJleHAiOjE5NDUwMTYyOTR9.9YCCl_oRCYHQIR3eAhUeLF-SiBqGIxaT9WqCS-YFtNw';
 
-const MESH_SERVICE_KEY = process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNzg3MzM2Mjk0LCJleHAiOjE5NDUwMTYyOTR9.ahzM4MIlGI6rkukPDvIQH0HkPx4dU95Pdn-Ewl-9C4s';
+const MESH_SERVICE_KEY = process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY || process.env.SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3ODczMzYyOTQsImV4cCI6MTk0NTAxNjI5NH0.ahzM4MIlGI6rkukPDvIQH0HkPx4dU95Pdn-Ewl-9C4s';
 
 const meshHeaders = {
   'Content-Type': 'application/json',
