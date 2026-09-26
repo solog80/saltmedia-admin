@@ -110,23 +110,84 @@ export const normalizeMinute = (isoStr: string): string => {
   }
 };
 
+function parseTimeToMinutes(timeStr: string): number | null {
+  if (!timeStr) return null;
+  if (timeStr.includes('T')) {
+    const d = new Date(timeStr);
+    if (!isNaN(d.getTime())) {
+      return d.getUTCHours() * 60 + d.getUTCMinutes();
+    }
+  }
+  const parts = timeStr.trim().split(':');
+  if (parts.length >= 2) {
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!isNaN(h) && !isNaN(m)) {
+      return h * 60 + m;
+    }
+  }
+  return null;
+}
+
 export const findShowForMinute = (
   programs: EPGProgram[],
   minuteIso: string
 ): { show: string; startUtc: string; endUtc: string } | null => {
   if (!programs || !programs.length || !minuteIso) return null;
-  const targetTime = new Date(minuteIso).getTime();
-  if (isNaN(targetTime)) return null;
+  const targetDate = new Date(minuteIso);
+  if (isNaN(targetDate.getTime())) return null;
+
+  const targetDay = DAY_NAMES[targetDate.getUTCDay()];
+  const yesterdayDay = DAY_NAMES[(targetDate.getUTCDay() + 6) % 7];
+  const targetMinutes = targetDate.getUTCHours() * 60 + targetDate.getUTCMinutes();
 
   for (const p of programs) {
-    const start = new Date(p.startTime).getTime();
-    const end = new Date(p.endTime).getTime();
-    if (!isNaN(start) && !isNaN(end) && targetTime >= start && targetTime < end) {
-      return {
-        show: p.programName,
-        startUtc: p.startTime,
-        endUtc: p.endTime,
-      };
+    const startMin = parseTimeToMinutes(p.startTime);
+    let endMin = parseTimeToMinutes(p.endTime);
+    if (startMin === null || endMin === null) continue;
+
+    if (endMin === 0 && startMin > 0) {
+      endMin = 1440;
+    }
+
+    const daysList = p.days
+      ? p.days.split(',').map((d) => d.trim().toLowerCase())
+      : [];
+
+    const isToday = daysList.length === 0 || daysList.includes(targetDay.toLowerCase());
+    const isYesterday = daysList.includes(yesterdayDay.toLowerCase());
+
+    if (endMin > startMin) {
+      if (isToday && targetMinutes >= startMin && targetMinutes < endMin) {
+        return {
+          show: p.programName,
+          startUtc: p.startTime,
+          endUtc: p.endTime,
+        };
+      }
+    } else if (endMin < startMin) {
+      if (isToday && targetMinutes >= startMin) {
+        return {
+          show: p.programName,
+          startUtc: p.startTime,
+          endUtc: p.endTime,
+        };
+      }
+      if (isYesterday && targetMinutes < endMin) {
+        return {
+          show: p.programName,
+          startUtc: p.startTime,
+          endUtc: p.endTime,
+        };
+      }
+    } else {
+      if (isToday) {
+        return {
+          show: p.programName,
+          startUtc: p.startTime,
+          endUtc: p.endTime,
+        };
+      }
     }
   }
   return null;
@@ -140,11 +201,27 @@ export const mapViewerStatsToShows = (
 ): ShowViewerStat[] => {
   if (!stats || !Array.isArray(stats)) return [];
   const results: ShowViewerStat[] = [];
+
+  const normalizedTv: Record<string, { programs: EPGProgram[] }> = {};
+  if (tv) {
+    for (const [k, v] of Object.entries(tv)) {
+      normalizedTv[k] = v;
+      normalizedTv[k.toLowerCase()] = v;
+      normalizedTv[k.toLowerCase().replace(/\s+/g, '_')] = v;
+      normalizedTv[k.toLowerCase().replace(/_/g, ' ')] = v;
+    }
+  }
+
   for (const s of stats) {
     const station = getStationForStream(s.stream);
     if (!station) continue;
     const minute = normalizeMinute(s.minute);
-    const stationData = tv ? tv[station] : undefined;
+
+    const stationData =
+      normalizedTv[station] ||
+      normalizedTv[station.toLowerCase()] ||
+      normalizedTv[station.toLowerCase().replace(/\s+/g, '_')];
+
     const show = stationData
       ? findShowForMinute(stationData.programs || [], minute)
       : null;

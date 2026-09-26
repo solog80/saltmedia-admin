@@ -98,19 +98,82 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ messages: JSON.parse(raw) });
     }
 
-    // Lineup: today's radio shows + which room currently has messages.
-    const lineup = await getTodayLineup();
+    // Lineup: active special events + active chat_rooms + today's radio shows.
+    const nowIso = new Date().toISOString();
+    let activeEvents: { id: string; title: string; image_url?: string }[] = [];
+    try {
+      const eventsRaw = await restFetch(
+        `events?select=id,title,image_url,start_date,end_date,enable_chat&or=(enable_chat.is.null,enable_chat.eq.true)&start_date=lte.${encodeURIComponent(nowIso)}&end_date=gte.${encodeURIComponent(nowIso)}`
+      );
+      activeEvents = JSON.parse(eventsRaw);
+    } catch (e) {
+      console.warn('Failed to fetch active events for chat route:', e);
+    }
+
     const roomsRaw = await restFetch(
-      `chat_rooms?select=id,program_name,is_active&kind=eq.radio&is_active=eq.true`
+      `chat_rooms?select=id,program_name,is_active&is_active=eq.true`
     );
-    const activeRooms = JSON.parse(roomsRaw) as { id: string }[];
+    const activeRooms = JSON.parse(roomsRaw) as { id: string; program_name?: string }[];
 
-    const shows = lineup.map((s) => ({
-      ...s,
-      isActive: activeRooms.some((r) => r.id === s.roomId),
-    }));
+    const lineup = await getTodayLineup();
 
-    // Prefer the first lineup show flagged active; fall back to the earliest today.
+    const shows: {
+      programName: string;
+      roomId: string;
+      startTime: string;
+      endTime: string;
+      image: string | null;
+      isActive: boolean;
+    }[] = [];
+
+    // 1. Add active special events
+    for (const ev of activeEvents) {
+      shows.push({
+        programName: ev.title,
+        roomId: ev.id,
+        startTime: '00:00',
+        endTime: '23:59',
+        image: ev.image_url || null,
+        isActive: true,
+      });
+      const slug = roomSlug(ev.title);
+      if (slug && slug !== ev.id && !shows.some((s) => s.roomId === slug)) {
+        shows.push({
+          programName: ev.title,
+          roomId: slug,
+          startTime: '00:00',
+          endTime: '23:59',
+          image: ev.image_url || null,
+          isActive: true,
+        });
+      }
+    }
+
+    // 2. Add active rooms from chat_rooms table
+    for (const room of activeRooms) {
+      if (!shows.some((s) => s.roomId === room.id)) {
+        shows.push({
+          programName: room.program_name || room.id,
+          roomId: room.id,
+          startTime: '00:00',
+          endTime: '23:59',
+          image: null,
+          isActive: true,
+        });
+      }
+    }
+
+    // 3. Add regular radio lineup
+    for (const s of lineup) {
+      if (!shows.some((existing) => existing.roomId === s.roomId)) {
+        shows.push({
+          ...s,
+          isActive: activeRooms.some((r) => r.id === s.roomId),
+        });
+      }
+    }
+
+    // Prefer the first active show; fall back to the earliest today.
     const activeRoomId =
       shows.find((s) => s.isActive)?.roomId ??
       shows[0]?.roomId ??
