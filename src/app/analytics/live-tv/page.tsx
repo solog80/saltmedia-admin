@@ -292,44 +292,47 @@ export default function LiveTvStatsPage() {
           </div>
         </div>
 
-        <div className="frosted-glass p-6 border border-white/10 rounded-lg">
+        <div className="frosted-glass p-6 border border-white/10 rounded-lg flex flex-col">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Globe size={18} className="text-purple-400" />
             Countries
           </h2>
           {countries.data?.countries?.length ? (
-            countries.data.countries
-              .filter((c) => c.name)
-              .slice(0, 8)
-              .map((c) => (
-                <BarRow
-                  key={c.name}
-                  label={`${getFlagEmoji(c.code)} ${c.name}`}
-                  value={c.viewers}
-                  max={maxCountry}
-                  color="bg-purple-500"
-                />
-              ))
+            <div className="max-h-96 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+              {countries.data.countries
+                .filter((c) => c.name || c.country)
+                .map((c) => (
+                  <BarRow
+                    key={c.name || c.country}
+                    label={`${getFlagEmoji(c.code)} ${c.name || c.country}`}
+                    value={c.viewers}
+                    max={maxCountry}
+                    color="bg-purple-500"
+                  />
+                ))}
+            </div>
           ) : (
             <p className="text-white/40 text-sm">No country data yet.</p>
           )}
         </div>
 
-        <div className="frosted-glass p-6 border border-white/10 rounded-lg">
+        <div className="frosted-glass p-6 border border-white/10 rounded-lg flex flex-col">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Radio size={18} className="text-cyan-400" />
             ISPs
           </h2>
           {countries.data?.isps?.length ? (
-            countries.data.isps.slice(0, 8).map((i) => (
-              <BarRow
-                key={`${i.code}-${i.isp}`}
-                label={`${getFlagEmoji(i.code)} ${i.isp}`}
-                value={i.viewers}
-                max={maxIsp}
-                color="bg-cyan-500"
-              />
-            ))
+            <div className="max-h-96 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+              {countries.data.isps.map((i) => (
+                <BarRow
+                  key={`${i.code}-${i.isp}`}
+                  label={`${getFlagEmoji(i.code)} ${i.isp}`}
+                  value={i.viewers}
+                  max={maxIsp}
+                  color="bg-cyan-500"
+                />
+              ))}
+            </div>
           ) : (
             <p className="text-white/40 text-sm">No ISP data yet.</p>
           )}
