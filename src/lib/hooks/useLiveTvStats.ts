@@ -338,13 +338,14 @@ const bucketStart = (minuteIso: string, bucketMinutes: number): number => {
   return Math.floor(t / (bucketMinutes * 60 * 1000)) * bucketMinutes * 60 * 1000;
 };
 
-// Pick a bucket size so the timeline stays readable (6-12 points).
 export const autoBucketMinutes = (windowMinutes: number): number => {
   if (windowMinutes <= 30) return 5;
   if (windowMinutes <= 60) return 10;
   if (windowMinutes <= 180) return 30;
   if (windowMinutes <= 720) return 60;
-  return 120;
+  if (windowMinutes <= 1440) return 120;
+  if (windowMinutes <= 10080) return 360; // 6 hours
+  return 1440; // 24 hours (1 day)
 };
 
 // Build a chart series of (time label, show, avg viewers) for the window,

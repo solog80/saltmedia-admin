@@ -208,6 +208,8 @@ export default function LiveTvStatsPage() {
             <option value={180}>Last 3 hours</option>
             <option value={720}>Last 12 hours</option>
             <option value={1440}>Last 24 hours</option>
+            <option value={10080}>Last 7 days</option>
+            <option value={43200}>Last 30 days</option>
           </select>
         </div>
       </div>
