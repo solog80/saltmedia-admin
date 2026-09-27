@@ -446,7 +446,7 @@ export const useViewerStats = (minutes = 30) => {
 export const useViewerCountries = (minutes = 30) => {
   return useQuery({
     queryKey: ['viewer-countries-bq', minutes],
-    queryFn: async (): Promise<{ countries: ViewerCountry[]; isps: ViewerIsp[] }> => {
+    queryFn: async (): Promise<{ countries: ViewerCountry[]; cities: ViewerCity[]; isps: ViewerIsp[] }> => {
       const res = await fetch(`/api/live-tv-stats?action=countries&minutes=${minutes}`);
       if (!res.ok) throw new Error(`Viewer countries returned ${res.status}`);
       const data = await res.json();
@@ -457,7 +457,7 @@ export const useViewerCountries = (minutes = 30) => {
           viewers: c.viewers,
         })
       );
-      return { countries, isps: data.isps || [] };
+      return { countries, cities: data.cities || [], isps: data.isps || [] };
     },
     staleTime: 60000,
   });

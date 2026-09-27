@@ -57,7 +57,7 @@ function getFallbackResponse(action: string | null, minutesStr: string) {
   if (action === 'stats') {
     return NextResponse.json({ viewers: [], minutes, fallback: true });
   } else if (action === 'countries') {
-    return NextResponse.json({ countries: [], isps: [], minutes, fallback: true });
+    return NextResponse.json({ countries: [], cities: [], isps: [], minutes, fallback: true });
   } else if (action === 'peak_bq') {
     return NextResponse.json({
       peak_viewers: 0,
