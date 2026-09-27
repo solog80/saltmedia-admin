@@ -18,6 +18,13 @@ export interface ViewerCountry {
   viewers: number;
 }
 
+export interface ViewerCity {
+  code: string;
+  country: string;
+  city: string;
+  viewers: number;
+}
+
 export interface ViewerIsp {
   code: string;
   isp: string;
@@ -36,6 +43,7 @@ export interface LiveViewers {
   window_minutes: number;
   streams: Record<string, number>;
   countries: ViewerCountry[];
+  cities?: ViewerCity[];
   isps: ViewerIsp[];
   excluded_datacenters_count?: number;
 }

@@ -11,6 +11,7 @@ import {
   RefreshCw,
   TrendingUp,
   MonitorPlay,
+  MapPin,
 } from 'lucide-react';
 import { AnalyticsNav } from '@/app/components/AnalyticsNav';
 import SimpleLineChart from '@/app/components/SimpleLineChart';
@@ -137,6 +138,7 @@ export default function LiveTvStatsPage() {
   const peakData = livePeak.data;
   const historySeries = history.data ? aggregateViewerSeries(history.data) : [];
   const maxCountry = Math.max(...(countries.data?.countries || []).map((c) => c.viewers), 1);
+  const maxCity = Math.max(...(countries.data?.cities || []).map((c) => c.viewers), 1);
   const maxIsp = Math.max(...(countries.data?.isps || []).map((i) => i.viewers), 1);
 
   const tvEpg = (epgResponse?.data?.tv || {}) as Record<
@@ -266,11 +268,11 @@ export default function LiveTvStatsPage() {
         />
       </div>
 
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
         <div className="frosted-glass p-6 border border-white/10 rounded-lg">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <MonitorPlay size={18} className="text-blue-400" />
-            Live Streams (Varnish 30s)
+            Live Streams
           </h2>
           {streamLabels.length > 0 ? (
             streamLabels.map((s) => (
@@ -283,11 +285,11 @@ export default function LiveTvStatsPage() {
               />
             ))
           ) : (
-            <p className="text-white/40 text-sm">No viewers in the current 30s window.</p>
+            <p className="text-white/40 text-sm">No viewers in current window.</p>
           )}
           <div className="mt-4 pt-4 border-t border-white/10">
             <p className="text-xs text-white/40">
-              Varnish log ring sliding window aggregator
+              Varnish log ring sliding window
             </p>
           </div>
         </div>
@@ -313,6 +315,28 @@ export default function LiveTvStatsPage() {
             </div>
           ) : (
             <p className="text-white/40 text-sm">No country data yet.</p>
+          )}
+        </div>
+
+        <div className="frosted-glass p-6 border border-white/10 rounded-lg flex flex-col">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <MapPin size={18} className="text-emerald-400" />
+            Cities
+          </h2>
+          {countries.data?.cities?.length ? (
+            <div className="max-h-96 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+              {countries.data.cities.map((c) => (
+                <BarRow
+                  key={`${c.code}-${c.city}`}
+                  label={`${getFlagEmoji(c.code)} ${c.city}`}
+                  value={c.viewers}
+                  max={maxCity}
+                  color="bg-emerald-500"
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-white/40 text-sm">No city data yet.</p>
           )}
         </div>
 
