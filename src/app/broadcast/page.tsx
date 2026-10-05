@@ -19,20 +19,27 @@ type BroadcastStatus = { id: string; broadcasterName?: string; isLive: boolean; 
 type BroadcastConfig = Record<string, any>;
 
 function DestForm({ form, setForm, onSave, onCancel }: any) {
-  const s = form.protocol === 'srt';
+  const isSrt = form.protocol === 'srt';
+  const isWebRtc = form.protocol === 'webrtc';
   return <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onCancel}>
     <div className="bg-gray-900 rounded-lg p-6 w-full max-w-md space-y-3" onClick={e => e.stopPropagation()}>
       <h3 className="text-white font-semibold">{form.id ? 'Edit' : 'Add'} Destination</h3>
       <input className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" placeholder="Name" value={form.name||''} onChange={e => setForm({...form, name: e.target.value})} />
       <select className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" value={form.protocol||'srt'} onChange={e => setForm({...form, protocol: e.target.value})}>
-        <option value="srt" className="text-black">SRT</option><option value="rtmp" className="text-black">RTMP</option>
+        <option value="srt" className="text-black">SRT</option>
+        <option value="rtmp" className="text-black">RTMP</option>
+        <option value="webrtc" className="text-black">WHIP (WebRTC)</option>
       </select>
-      {s ? (
+      {isSrt ? (
         <div className="grid grid-cols-2 gap-2">
           <input className="col-span-2 bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" placeholder="Host" value={form.host||''} onChange={e => setForm({...form, host: e.target.value})} />
           <input className="bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" type="number" placeholder="Port" value={form.port||''} onChange={e => setForm({...form, port: Number(e.target.value)})} />
           <input className="bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" placeholder="Stream ID" value={form.streamId||''} onChange={e => setForm({...form, streamId: e.target.value})} />
           <input className="col-span-2 bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" placeholder="Passphrase" value={form.passphrase||''} onChange={e => setForm({...form, passphrase: e.target.value})} />
+        </div>
+      ) : isWebRtc ? (
+        <div className="space-y-2">
+          <input className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" placeholder="WHIP URL (e.g. http://host:8080/app/stream?direction=whip)" value={form.webrtcUrl||''} onChange={e => setForm({...form, webrtcUrl: e.target.value})} />
         </div>
       ) : (
         <div className="space-y-2">
@@ -172,8 +179,8 @@ export default function BroadcastPage() {
                   {(config.destinations||[]).map((d:any,i:number) => (
                     <div key={d.id||i} className="bg-white/5 rounded p-2 border border-white/10 flex items-center justify-between">
                       <div>
-                        <div className="flex items-center gap-2"><span className="text-sm text-white font-medium">{d.name||'Unnamed'}</span><span className={`text-xs px-1.5 py-0.5 rounded ${d.protocol==='srt'?'bg-blue-500/20 text-blue-400':'bg-green-500/20 text-green-400'}`}>{d.protocol||'srt'}</span></div>
-                        <div className="text-xs text-white/50">{d.protocol==='srt'?`${d.host}:${d.port}`:d.rtmpUrl}{d.streamId?` / ${d.streamId}`:''}</div>
+                        <div className="flex items-center gap-2"><span className="text-sm text-white font-medium">{d.name||'Unnamed'}</span><span className={`text-xs px-1.5 py-0.5 rounded ${d.protocol==='srt'?'bg-blue-500/20 text-blue-400':d.protocol==='webrtc'?'bg-purple-500/20 text-purple-400':'bg-green-500/20 text-green-400'}`}>{d.protocol==='webrtc'?'WHIP':(d.protocol||'srt').toUpperCase()}</span></div>
+                        <div className="text-xs text-white/50">{d.protocol==='srt'?`${d.host}:${d.port}`:d.protocol==='webrtc'?d.webrtcUrl:d.rtmpUrl}{d.streamId?` / ${d.streamId}`:''}</div>
                       </div>
                       <div className="flex gap-1">
                         <button className="text-xs text-blue-400 hover:text-blue-300" onClick={()=>{setDestForm(d);setEditDest(d);setShowDestForm(true)}}>Edit</button>
