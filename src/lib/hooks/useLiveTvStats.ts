@@ -342,6 +342,10 @@ export interface TrendPoint {
   show: string;
   viewers: number;
   peak: number;
+  stream1Viewers?: number;
+  stream2Viewers?: number;
+  stream1Show?: string;
+  stream2Show?: string;
 }
 
 const bucketStart = (minuteIso: string, bucketMinutes: number): number => {
@@ -365,58 +369,111 @@ export const showTrendSeries = (
   rows: ShowViewerStat[],
   bucketMinutes = 10
 ): TrendPoint[] => {
-  // 1. Group by minute to sum viewers across channels concurrently
-  const minuteViewers = new Map<string, { total: number; shows: Set<string>; time: number }>();
+  // 1. Group by minute to capture Salt TV One & Two viewers and shows concurrently
+  const minuteViewers = new Map<
+    string,
+    {
+      time: number;
+      stream1: number;
+      stream2: number;
+      stream1Show?: string;
+      stream2Show?: string;
+    }
+  >();
+
   rows.forEach((r) => {
     const t = new Date(r.minute).getTime();
-    const existing = minuteViewers.get(r.minute);
-    if (existing) {
-      existing.total += r.viewers;
-      if (r.show && r.show !== 'Off-Air / Unknown') existing.shows.add(r.show);
+    const existing = minuteViewers.get(r.minute) || {
+      time: t,
+      stream1: 0,
+      stream2: 0,
+      stream1Show: undefined,
+      stream2Show: undefined,
+    };
+
+    if (r.stream === 'stream') {
+      existing.stream1 = r.viewers;
+      if (r.show && r.show !== 'Off-Air / Unknown') existing.stream1Show = r.show;
+    } else if (r.stream === 'stream2') {
+      existing.stream2 = r.viewers;
+      if (r.show && r.show !== 'Off-Air / Unknown') existing.stream2Show = r.show;
     } else {
-      const shows = new Set<string>();
-      if (r.show && r.show !== 'Off-Air / Unknown') shows.add(r.show);
-      minuteViewers.set(r.minute, { total: r.viewers, shows, time: t });
+      existing.stream1 = existing.stream1 || r.viewers;
+      if (r.show && r.show !== 'Off-Air / Unknown') existing.stream1Show = r.show;
     }
+
+    minuteViewers.set(r.minute, existing);
   });
 
   // 2. Bucket minute totals into bucketMinutes intervals
   const byBucket = new Map<
     number,
-    { shows: Set<string>; total: number; minuteCount: number; peak: number }
+    {
+      minuteCount: number;
+      totalSum: number;
+      stream1Sum: number;
+      stream2Sum: number;
+      stream1Shows: Set<string>;
+      stream2Shows: Set<string>;
+      peak: number;
+    }
   >();
 
   minuteViewers.forEach((m) => {
     const bucketKey = Math.floor(m.time / (bucketMinutes * 60 * 1000)) * bucketMinutes * 60 * 1000;
+    const totalMin = m.stream1 + m.stream2;
     const existing = byBucket.get(bucketKey);
+
     if (existing) {
-      existing.total += m.total;
       existing.minuteCount += 1;
-      m.shows.forEach((sh) => existing.shows.add(sh));
-      if (m.total > existing.peak) existing.peak = m.total;
+      existing.totalSum += totalMin;
+      existing.stream1Sum += m.stream1;
+      existing.stream2Sum += m.stream2;
+      if (m.stream1Show) existing.stream1Shows.add(m.stream1Show);
+      if (m.stream2Show) existing.stream2Shows.add(m.stream2Show);
+      if (totalMin > existing.peak) existing.peak = totalMin;
     } else {
-      const shows = new Set<string>();
-      m.shows.forEach((sh) => shows.add(sh));
+      const s1Shows = new Set<string>();
+      if (m.stream1Show) s1Shows.add(m.stream1Show);
+      const s2Shows = new Set<string>();
+      if (m.stream2Show) s2Shows.add(m.stream2Show);
+
       byBucket.set(bucketKey, {
-        shows,
-        total: m.total,
         minuteCount: 1,
-        peak: m.total,
+        totalSum: totalMin,
+        stream1Sum: m.stream1,
+        stream2Sum: m.stream2,
+        stream1Shows: s1Shows,
+        stream2Shows: s2Shows,
+        peak: totalMin,
       });
     }
   });
 
   return Array.from(byBucket.entries())
     .sort(([keyA], [keyB]) => keyA - keyB)
-    .map(([key, e]) => ({
-      name: new Date(key).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      show: Array.from(e.shows).size > 0 ? Array.from(e.shows).join(' · ') : 'Live Broadcast',
-      viewers: e.minuteCount ? Math.round(e.total / e.minuteCount) : 0,
-      peak: e.peak,
-    }));
+    .map(([key, e]) => {
+      const allShows = new Set<string>();
+      e.stream1Shows.forEach((sh) => allShows.add(sh));
+      e.stream2Shows.forEach((sh) => allShows.add(sh));
+
+      const s1Viewers = e.minuteCount ? Math.round(e.stream1Sum / e.minuteCount) : 0;
+      const s2Viewers = e.minuteCount ? Math.round(e.stream2Sum / e.minuteCount) : 0;
+
+      return {
+        name: new Date(key).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        show: allShows.size > 0 ? Array.from(allShows).join(' · ') : 'Live Broadcast',
+        viewers: e.minuteCount ? Math.round(e.totalSum / e.minuteCount) : 0,
+        peak: e.peak,
+        stream1Viewers: s1Viewers,
+        stream2Viewers: s2Viewers,
+        stream1Show: Array.from(e.stream1Shows).join(', ') || undefined,
+        stream2Show: Array.from(e.stream2Shows).join(', ') || undefined,
+      };
+    });
 };
 
 // Live numbers straight from the edge stats API (proxied server-side)

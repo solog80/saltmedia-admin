@@ -118,9 +118,9 @@ export default function LiveTvStatsPage() {
   const livePeak = useLivePeak(60);
   const history = useViewerStats(historyMinutes);
   const countries = useViewerCountries(historyMinutes);
-  const { data: epgResponse } = useEPGData();
+  const { data: epgResponse, isLoading: epgLoading } = useEPGData();
 
-  const isLoading = live.isLoading || livePeak.isLoading;
+  const isLoading = live.isLoading || livePeak.isLoading || history.isLoading || epgLoading;
   const error = live.error || livePeak.error;
 
   if (isLoading) {
@@ -369,13 +369,12 @@ export default function LiveTvStatsPage() {
             data={showTrend.length ? showTrend : historySeries}
             title={`Viewer Trend by Show (last ${historyMinutes} min · ${bucket}-min avg)`}
             lines={[
-              { dataKey: 'viewers', color: '#3b82f6', gradientId: 'viewerTrendGradient', label: 'Avg viewers' },
+              { dataKey: 'viewers', color: '#3b82f6', gradientId: 'viewerTrendGradient', label: 'Avg viewers (Total)' },
               { dataKey: 'peak', color: '#f97316', gradientId: 'viewerPeakGradient', label: 'Peak viewers' },
             ]}
           />
           <p className="text-xs text-white/40 mt-2">
-            Each point is the {bucket}-minute average, labelled with the EPG show airing on that
-            stream at that time{epgResponse?.data ? '' : ' (EPG unavailable)'}.
+            Each point is the {bucket}-minute combined average across Salt TV One &amp; Two. Hover to see individual channel and program details.
           </p>
         </div>
         <div className="frosted-glass p-6 border border-white/10 rounded-lg">
