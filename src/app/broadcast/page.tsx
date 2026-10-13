@@ -47,6 +47,9 @@ function DestForm({ form, setForm, onSave, onCancel }: any) {
           <input className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" placeholder="Stream Key" value={form.streamKey||''} onChange={e => setForm({...form, streamKey: e.target.value})} />
         </div>
       )}
+      <label className="flex items-center gap-2 text-sm text-white/80 cursor-pointer pt-1">
+        <input type="checkbox" checked={form.isDefault||false} onChange={e => setForm({...form, isDefault: e.target.checked})} /> Default Destination
+      </label>
       <div className="flex gap-2 pt-2">
         <button className="flex-1 bg-amber-500 text-black rounded py-2 text-sm font-bold" onClick={onSave}>Save</button>
         <button className="flex-1 bg-white/10 text-white rounded py-2 text-sm" onClick={onCancel}>Cancel</button>
@@ -85,7 +88,10 @@ export default function BroadcastPage() {
   };
 
   const saveDest = () => {
-    const dests = [...(config?.destinations || [])];
+    let dests = [...(config?.destinations || [])];
+    if (destForm.isDefault) {
+      dests = dests.map((d: any) => ({ ...d, isDefault: false }));
+    }
     if (editDest) { const i = dests.findIndex((d:any) => d.id === editDest.id); if (i>=0) dests[i] = { ...destForm, id: editDest.id }; }
     else dests.push({ ...destForm, id: `dest_${Date.now()}` });
     updateConfig({ destinations: dests }); setShowDestForm(false); setEditDest(null);
@@ -179,7 +185,11 @@ export default function BroadcastPage() {
                   {(config.destinations||[]).map((d:any,i:number) => (
                     <div key={d.id||i} className="bg-white/5 rounded p-2 border border-white/10 flex items-center justify-between">
                       <div>
-                        <div className="flex items-center gap-2"><span className="text-sm text-white font-medium">{d.name||'Unnamed'}</span><span className={`text-xs px-1.5 py-0.5 rounded ${d.protocol==='srt'?'bg-blue-500/20 text-blue-400':d.protocol==='webrtc'?'bg-purple-500/20 text-purple-400':'bg-green-500/20 text-green-400'}`}>{d.protocol==='webrtc'?'WHIP':(d.protocol||'srt').toUpperCase()}</span></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-white font-medium">{d.name||'Unnamed'}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${d.protocol==='srt'?'bg-blue-500/20 text-blue-400':d.protocol==='webrtc'?'bg-purple-500/20 text-purple-400':'bg-green-500/20 text-green-400'}`}>{d.protocol==='webrtc'?'WHIP':(d.protocol||'srt').toUpperCase()}</span>
+                          {d.isDefault && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">DEFAULT</span>}
+                        </div>
                         <div className="text-xs text-white/50">{d.protocol==='srt'?`${d.host}:${d.port}`:d.protocol==='webrtc'?d.webrtcUrl:d.rtmpUrl}{d.streamId?` / ${d.streamId}`:''}</div>
                       </div>
                       <div className="flex gap-1">

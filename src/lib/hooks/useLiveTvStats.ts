@@ -38,6 +38,7 @@ export interface LiveViewers {
   webrtc_connections?: number;
   avg_throughput_out?: number;
   avg_throughput_in?: number;
+  max_total_connections?: number;
   ipv4: number;
   ipv6: number;
   window_minutes: number;
@@ -85,10 +86,10 @@ const DAY_NAMES = [
 export const getStationForStream = (streamName: string): string | null => {
   if (!streamName) return null;
   const clean = streamName.toLowerCase().replace(/^app\//, '');
-  if (clean.includes('stream2') || clean.includes('salt2')) {
+  if (clean.includes('stream2') || clean.includes('salt2') || clean.includes('tv2')) {
     return 'Salt TV Two';
   }
-  if (clean.includes('stream') || clean.includes('salt1')) {
+  if (clean.includes('stream') || clean.includes('salt1') || clean.includes('tv1')) {
     return 'Salt TV One';
   }
   return null;
@@ -97,10 +98,10 @@ export const getStationForStream = (streamName: string): string | null => {
 export const getStreamKey = (streamName: string): 'stream' | 'stream2' | null => {
   if (!streamName) return null;
   const clean = streamName.toLowerCase().replace(/^app\//, '');
-  if (clean.includes('stream2') || clean.includes('salt2')) {
+  if (clean.includes('stream2') || clean.includes('salt2') || clean.includes('tv2')) {
     return 'stream2';
   }
-  if (clean.includes('stream') || clean.includes('salt1')) {
+  if (clean.includes('stream') || clean.includes('salt1') || clean.includes('tv1')) {
     return 'stream';
   }
   return null;

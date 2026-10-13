@@ -86,7 +86,7 @@ const StatCard = ({
   );
 };
 
-const STREAM_STATION_KEYS = new Set(['stream', 'stream2']);
+const STREAM_STATION_KEYS = new Set(['stream', 'stream2', 'tv1', 'tv2']);
 
 const BarRow = ({
   label,
@@ -158,7 +158,7 @@ export default function LiveTvStatsPage() {
 
   const streamLabels = liveData
     ? Object.entries(liveData.streams || {})
-        .filter(([name]) => !name.includes('/') && (name === 'stream' || name === 'stream2'))
+        .filter(([name]) => !name.includes('abr.m3u8') && (name === 'tv1/stream' || name === 'tv2/live' || name === 'stream' || name === 'stream2'))
         .map(([name, count]) => {
           const station = getStationForStream(name);
           const key = getStreamKey(name) || '';
@@ -233,7 +233,7 @@ export default function LiveTvStatsPage() {
           icon={Users}
           label="Live Viewers (Varnish 30s)"
           value={liveData?.viewers ?? liveData?.total_connections ?? '—'}
-          subtitle={`Salt TV One: ${liveData?.streams?.['stream'] ?? 0} · Salt TV Two: ${liveData?.streams?.['stream2'] ?? 0}`}
+          subtitle={`Salt TV One: ${liveData?.streams?.['tv1/stream'] ?? liveData?.streams?.['stream'] ?? 0} · Salt TV Two: ${liveData?.streams?.['tv2/live'] ?? liveData?.streams?.['stream2'] ?? 0}`}
           color="red"
           live
         />
