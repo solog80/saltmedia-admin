@@ -146,9 +146,11 @@ export const findShowForMinute = (
   const targetDate = new Date(minuteIso);
   if (isNaN(targetDate.getTime())) return null;
 
-  const targetDay = DAY_NAMES[targetDate.getUTCDay()];
-  const yesterdayDay = DAY_NAMES[(targetDate.getUTCDay() + 6) % 7];
-  const targetMinutes = targetDate.getUTCHours() * 60 + targetDate.getUTCMinutes();
+  // Station local broadcast schedule is East Africa Time (EAT = UTC+3)
+  const eatDate = new Date(targetDate.getTime() + 3 * 3600 * 1000);
+  const targetDay = DAY_NAMES[eatDate.getUTCDay()];
+  const yesterdayDay = DAY_NAMES[(eatDate.getUTCDay() + 6) % 7];
+  const targetMinutes = eatDate.getUTCHours() * 60 + eatDate.getUTCMinutes();
 
   for (const p of programs) {
     const startMin = parseTimeToMinutes(p.startTime);
@@ -269,8 +271,8 @@ export const aggregateViewerByShow = (
       minutes: 0,
       totalViewers: 0,
       avgViewers: 0,
-      startLocal: r.showStartUtc ? utcToLocal(r.showStartUtc) : '',
-      endLocal: r.showEndUtc ? utcToLocal(r.showEndUtc) : '',
+      startLocal: r.showStartUtc || '',
+      endLocal: r.showEndUtc || '',
     };
     entry.minutes += 1;
     entry.totalViewers += r.viewers;
@@ -305,11 +307,10 @@ export const aggregateViewerByShowAndStream = (
       totalViewers: 0,
       stream1Viewers: 0,
       stream2Viewers: 0,
-      startLocal: r.showStartUtc ? utcToLocal(r.showStartUtc) : '',
-      endLocal: r.showEndUtc ? utcToLocal(r.showEndUtc) : '',
+      startLocal: r.showStartUtc || '',
+      endLocal: r.showEndUtc || '',
     };
     entry.minutes += 1;
-    entry.totalViewers += r.viewers;
     if (r.stream === 'stream') {
       entry.stream1Viewers += r.viewers;
       const m = streamMinutes.get(r.show) || { stream: 0, stream2: 0 };
@@ -326,13 +327,16 @@ export const aggregateViewerByShowAndStream = (
   return Array.from(byShow.values())
     .map((e) => {
       const m = streamMinutes.get(e.show) || { stream: 0, stream2: 0 };
+      const s1 = m.stream ? Math.round(e.stream1Viewers / m.stream) : 0;
+      const s2 = m.stream2 ? Math.round(e.stream2Viewers / m.stream2) : 0;
       return {
         ...e,
-        stream1Viewers: m.stream ? Math.round(e.stream1Viewers / m.stream) : 0,
-        stream2Viewers: m.stream2 ? Math.round(e.stream2Viewers / m.stream2) : 0,
+        stream1Viewers: s1,
+        stream2Viewers: s2,
+        totalViewers: s1 + s2,
       };
     })
-    .sort((a, b) => a.startLocal.localeCompare(b.startLocal));
+    .sort((a, b) => b.totalViewers - a.totalViewers);
 };
 
 export interface TrendPoint {
@@ -363,35 +367,55 @@ export const showTrendSeries = (
   rows: ShowViewerStat[],
   bucketMinutes = 10
 ): TrendPoint[] => {
-  const byBucket = new Map<
-    number,
-    { shows: Set<string>; total: number; count: number; peak: number }
-  >();
+  // 1. Group by minute to sum viewers across channels concurrently
+  const minuteViewers = new Map<string, { total: number; shows: Set<string>; time: number }>();
   rows.forEach((r) => {
-    const key = bucketStart(r.minute, bucketMinutes);
-    const existing = byBucket.get(key);
+    const t = new Date(r.minute).getTime();
+    const existing = minuteViewers.get(r.minute);
     if (existing) {
       existing.total += r.viewers;
-      existing.count += 1;
-      existing.shows.add(r.show);
-      if (r.viewers > existing.peak) existing.peak = r.viewers;
+      if (r.show && r.show !== 'Off-Air / Unknown') existing.shows.add(r.show);
     } else {
-      byBucket.set(key, {
-        shows: new Set([r.show]),
-        total: r.viewers,
-        count: 1,
-        peak: r.viewers,
+      const shows = new Set<string>();
+      if (r.show && r.show !== 'Off-Air / Unknown') shows.add(r.show);
+      minuteViewers.set(r.minute, { total: r.viewers, shows, time: t });
+    }
+  });
+
+  // 2. Bucket minute totals into bucketMinutes intervals
+  const byBucket = new Map<
+    number,
+    { shows: Set<string>; total: number; minuteCount: number; peak: number }
+  >();
+
+  minuteViewers.forEach((m) => {
+    const bucketKey = Math.floor(m.time / (bucketMinutes * 60 * 1000)) * bucketMinutes * 60 * 1000;
+    const existing = byBucket.get(bucketKey);
+    if (existing) {
+      existing.total += m.total;
+      existing.minuteCount += 1;
+      m.shows.forEach((sh) => existing.shows.add(sh));
+      if (m.total > existing.peak) existing.peak = m.total;
+    } else {
+      const shows = new Set<string>();
+      m.shows.forEach((sh) => shows.add(sh));
+      byBucket.set(bucketKey, {
+        shows,
+        total: m.total,
+        minuteCount: 1,
+        peak: m.total,
       });
     }
   });
+
   return Array.from(byBucket.entries())
     .map(([key, e]) => ({
       name: new Date(key).toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
       }),
-      show: Array.from(e.shows).join(' / '),
-      viewers: e.count ? Math.round(e.total / e.count) : 0,
+      show: Array.from(e.shows).size > 0 ? Array.from(e.shows).join(' · ') : 'Live Broadcast',
+      viewers: e.minuteCount ? Math.round(e.total / e.minuteCount) : 0,
       peak: e.peak,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
