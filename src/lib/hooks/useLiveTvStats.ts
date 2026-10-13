@@ -132,7 +132,7 @@ function parseTimeToMinutes(timeStr: string): number | null {
     const h = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10);
     if (!isNaN(h) && !isNaN(m)) {
-      return h * 60 + m;
+      return (h % 24) * 60 + m;
     }
   }
   return null;
@@ -146,11 +146,9 @@ export const findShowForMinute = (
   const targetDate = new Date(minuteIso);
   if (isNaN(targetDate.getTime())) return null;
 
-  // Station local broadcast schedule is East Africa Time (EAT = UTC+3)
-  const eatDate = new Date(targetDate.getTime() + 3 * 3600 * 1000);
-  const targetDay = DAY_NAMES[eatDate.getUTCDay()];
-  const yesterdayDay = DAY_NAMES[(eatDate.getUTCDay() + 6) % 7];
-  const targetMinutes = eatDate.getUTCHours() * 60 + eatDate.getUTCMinutes();
+  const targetDay = DAY_NAMES[targetDate.getUTCDay()];
+  const yesterdayDay = DAY_NAMES[(targetDate.getUTCDay() + 6) % 7];
+  const targetMinutes = targetDate.getUTCHours() * 60 + targetDate.getUTCMinutes();
 
   for (const p of programs) {
     const startMin = parseTimeToMinutes(p.startTime);
@@ -271,8 +269,8 @@ export const aggregateViewerByShow = (
       minutes: 0,
       totalViewers: 0,
       avgViewers: 0,
-      startLocal: r.showStartUtc || '',
-      endLocal: r.showEndUtc || '',
+      startLocal: r.showStartUtc ? utcToLocal(r.showStartUtc) : '',
+      endLocal: r.showEndUtc ? utcToLocal(r.showEndUtc) : '',
     };
     entry.minutes += 1;
     entry.totalViewers += r.viewers;
@@ -307,8 +305,8 @@ export const aggregateViewerByShowAndStream = (
       totalViewers: 0,
       stream1Viewers: 0,
       stream2Viewers: 0,
-      startLocal: r.showStartUtc || '',
-      endLocal: r.showEndUtc || '',
+      startLocal: r.showStartUtc ? utcToLocal(r.showStartUtc) : '',
+      endLocal: r.showEndUtc ? utcToLocal(r.showEndUtc) : '',
     };
     entry.minutes += 1;
     if (r.stream === 'stream') {
@@ -409,6 +407,7 @@ export const showTrendSeries = (
   });
 
   return Array.from(byBucket.entries())
+    .sort(([keyA], [keyB]) => keyA - keyB)
     .map(([key, e]) => ({
       name: new Date(key).toLocaleTimeString([], {
         hour: '2-digit',
@@ -417,8 +416,7 @@ export const showTrendSeries = (
       show: Array.from(e.shows).size > 0 ? Array.from(e.shows).join(' · ') : 'Live Broadcast',
       viewers: e.minuteCount ? Math.round(e.total / e.minuteCount) : 0,
       peak: e.peak,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    }));
 };
 
 // Live numbers straight from the edge stats API (proxied server-side)
