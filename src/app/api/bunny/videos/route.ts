@@ -7,11 +7,12 @@ const BUNNY_BASE_URL = "https://video.bunnycdn.com"
 
 export async function GET(request: NextRequest) {
   try {
+    const videoId = request.nextUrl.searchParams.get("videoId")
     const collectionId = request.nextUrl.searchParams.get("collectionId")
 
-    if (!collectionId) {
+    if (!videoId && !collectionId) {
       return NextResponse.json(
-        { error: "collectionId is required" },
+        { error: "videoId or collectionId is required" },
         { status: 400 }
       )
     }
@@ -21,6 +22,43 @@ export async function GET(request: NextRequest) {
         { error: "Bunny API credentials not configured" },
         { status: 500 }
       )
+    }
+
+    // Fetch individual video status
+    if (videoId) {
+      const response = await fetch(
+        `${BUNNY_BASE_URL}/library/${BUNNY_LIBRARY_ID}/videos/${videoId}`,
+        {
+          headers: {
+            AccessKey: BUNNY_ACCESS_KEY,
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        }
+      )
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`Bunny API error: ${response.status}`, errorText)
+        return NextResponse.json(
+          { error: `Bunny API error: ${response.status}` },
+          { status: response.status }
+        )
+      }
+
+      const video = await response.json()
+      return NextResponse.json({
+        video: {
+          guid: video.guid,
+          title: video.title,
+          status: video.status,
+          encodeProgress: video.encodeProgress ?? 0,
+          length: video.length ?? 0,
+          availableResolutions: video.availableResolutions || "",
+          thumbnailUrl: video.thumbnailUrl || (video.thumbnailFileName ? `https://${BUNNY_PULL_ZONE_DOMAIN}/${video.guid}/${video.thumbnailFileName}` : ""),
+        },
+        pullZoneDomain: BUNNY_PULL_ZONE_DOMAIN,
+      })
     }
 
     // Fetch all videos and filter by collectionId on the client side

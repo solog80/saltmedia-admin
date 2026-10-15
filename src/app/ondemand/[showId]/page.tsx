@@ -70,6 +70,18 @@ interface Episode {
   published?: boolean;
   processing?: boolean;
   sfxJobName?: string;
+  server?: string;
+  bunnyGuid?: string;
+}
+
+interface BunnyVideoStatus {
+  guid: string;
+  title: string;
+  status: number;
+  encodeProgress: number;
+  length: number;
+  availableResolutions: string;
+  thumbnailUrl: string;
 }
 
 interface SfxJob {
@@ -250,6 +262,75 @@ export default function ShowDetailPage() {
     if (!name) return undefined;
     return jobs.find((j) => j.hlsUrl?.includes(encodeURI(name)));
   };
+
+  const getBunnyGuid = (episode: Episode): string | null => {
+    if (episode.bunnyGuid) return episode.bunnyGuid;
+    const match = episode.videoUrl?.match(/https:\/\/[^/]+\/([0-9a-f-]{36})\//i);
+    return match ? match[1] : null;
+  };
+
+  const processingBunnyGuids = seasonEpisodes
+    .filter((ep) => ep.processing)
+    .map(getBunnyGuid)
+    .filter((g): g is string => !!g);
+
+  const { data: bunnyStatuses } = useQuery<Record<string, BunnyVideoStatus>>({
+    queryKey: ['bunny-statuses', processingBunnyGuids.slice().sort().join(',')],
+    queryFn: async () => {
+      const result: Record<string, BunnyVideoStatus> = {};
+      await Promise.all(
+        processingBunnyGuids.map(async (guid) => {
+          try {
+            const res = await fetch(`/api/bunny/videos?videoId=${encodeURIComponent(guid)}`, { cache: 'no-store' });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.video) {
+                result[guid] = data.video;
+              }
+            }
+          } catch (e) {
+            console.error('Failed to fetch Bunny video status for', guid, e);
+          }
+        })
+      );
+      return result;
+    },
+    enabled: processingBunnyGuids.length > 0,
+    refetchInterval: processingBunnyGuids.length > 0 ? 3000 : false,
+  });
+
+  useEffect(() => {
+    if (!seasonEpisodes.length || !bunnyStatuses) return;
+    for (const episode of seasonEpisodes) {
+      if (!episode.processing) continue;
+      if (finalizedEpisodeRef.current.has(episode.id)) continue;
+      const guid = getBunnyGuid(episode);
+      if (!guid) continue;
+      const bStatus = bunnyStatuses[guid];
+      if (!bStatus) continue;
+
+      if (bStatus.status === 4 || bStatus.encodeProgress === 100) {
+        finalizedEpisodeRef.current.add(episode.id);
+        (async () => {
+          try {
+            await ondemandProxy('updateEpisode', {
+              showId,
+              seasonId: selectedSeason,
+              episodeId: episode.id,
+              updates: {
+                processing: false,
+                duration: bStatus.length > 0 ? Math.round(bStatus.length) : episode.duration,
+                ...(bStatus.thumbnailUrl ? { thumbnail: bStatus.thumbnailUrl } : {}),
+              },
+            });
+          } catch (err) {
+            console.error('Failed to finalize Bunny episode:', err);
+          }
+          if (selectedSeason) handleSelectSeason(selectedSeason);
+        })();
+      }
+    }
+  }, [seasonEpisodes, bunnyStatuses, selectedSeason, showId]);
 
   useEffect(() => {
     if (!seasonEpisodes.length) return;
@@ -603,10 +684,17 @@ export default function ShowDetailPage() {
                     {seasonEpisodes.length > 0 ? (
                       seasonEpisodes.map((episode, idx) => {
                         const activeJob = matchSfxJob(episode, activeJobs);
-                        const isProcessing = episode.processing === true || !!activeJob;
-                        const pct = activeJob?.status === 'queued'
-                          ? 0
-                          : activeJob?.stagePct || Math.round(((activeJob?.step || 0) / (activeJob?.total || 1)) * 100);
+                        const bunnyGuid = getBunnyGuid(episode);
+                        const bunnyStatus = bunnyGuid && bunnyStatuses ? bunnyStatuses[bunnyGuid] : null;
+
+                        const isProcessing = episode.processing === true || !!activeJob || (bunnyStatus ? bunnyStatus.status < 4 : false);
+                        const pct = activeJob
+                          ? (activeJob.status === 'queued' ? 0 : activeJob.stagePct || Math.round(((activeJob.step || 0) / (activeJob.total || 1)) * 100))
+                          : (bunnyStatus ? bunnyStatus.encodeProgress : 0);
+
+                        const statusText = activeJob
+                          ? (activeJob.status === 'queued' ? 'Queued' : `${activeJob.stage || 'encoding'}${activeJob.current ? ' — ' + activeJob.current : ''}${activeJob.eta ? ' — ETA ' + activeJob.eta : ''}`)
+                          : (bunnyStatus ? `Transcoding (${bunnyStatus.availableResolutions || 'processing'})` : 'Transcoding...');
                         return (
                         <div
                           key={episode.id}
@@ -628,23 +716,20 @@ export default function ShowDetailPage() {
                               />
                             )}
                             {isProcessing ? (
-                              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-2 p-3">
-                                <span className="text-[10px] font-semibold text-green-400 tracking-widest animate-pulse">TRANSCODING</span>
-                                {activeJob && (
-                                  <>
-                                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
-                                        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-[10px] text-white/60 text-center">
-                                      {activeJob.status === 'queued'
-                                        ? 'Queued'
-                                        : `${activeJob.stage || 'encoding'}${activeJob.current ? ' — ' + activeJob.current : ''}${activeJob.eta ? ' — ETA ' + activeJob.eta : ''}`}
-                                    </span>
-                                  </>
-                                )}
+                              <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center gap-2 p-3">
+                                <span className="text-[10px] font-semibold text-green-400 tracking-widest animate-pulse">
+                                  {bunnyStatus ? 'BUNNY TRANSCODING' : 'TRANSCODING'}
+                                </span>
+                                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                                    style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                                  />
+                                </div>
+                                <div className="flex items-center justify-between w-full px-1 text-[10px] text-white/60">
+                                  <span className="truncate max-w-[70%]">{statusText}</span>
+                                  <span className="font-mono text-white/80">{pct}%</span>
+                                </div>
                               </div>
                             ) : (
                               <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition flex items-center justify-center">

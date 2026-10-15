@@ -101,6 +101,27 @@ interface PendingUpload {
   startedAt: number;
 }
 
+export interface UploadJob {
+  id: string;
+  title: string;
+  description: string;
+  fileName: string;
+  fileSize: number;
+  showId: string;
+  showTitle: string;
+  seasonId?: string;
+  seasonTitle?: string;
+  server: 'bunny' | 'sfx';
+  status: 'queued' | 'initiating' | 'uploading' | 'transcoding' | 'done' | 'failed' | 'paused';
+  progress: number;
+  statusText: string;
+  error?: string;
+  startedAt: number;
+  completedAt?: number;
+  bunnyVideoId?: string;
+  sfxJobName?: string;
+}
+
 const PENDING_KEY = 'bunnyPendingUploads';
 
 function loadPendingUploads(): PendingUpload[] {
@@ -208,10 +229,106 @@ function OndemandContent() {
   const [uploadSectionOpen, setUploadSectionOpen] = useState(false);
   const fileRef = useRef<File | null>(null);
 
-  // Auto-open upload section when uploading starts
+  // Multi-job upload queue configuration (max 3 concurrent network uploads)
+  const MAX_CONCURRENT_UPLOADS = 3;
+  const [uploadJobs, setUploadJobs] = useState<UploadJob[]>([]);
+  const tusUploadsRef = useRef<Record<string, tus.Upload>>({});
+  const activeUploadIdsRef = useRef<Set<string>>(new Set());
+  const queuedRunnersRef = useRef<Map<string, () => void>>(new Map());
+  const queueOrderRef = useRef<string[]>([]);
+
+  const activeUploadsCount = uploadJobs.filter(
+    (j) => j.status === 'uploading' || j.status === 'initiating'
+  ).length;
+  const queuedJobsCount = uploadJobs.filter((j) => j.status === 'queued').length;
+  const transcodingJobsCount = uploadJobs.filter((j) => j.status === 'transcoding').length;
+  const activeJobCount = activeUploadsCount + queuedJobsCount + transcodingJobsCount;
+
+  const updateJob = (jobId: string, updates: Partial<UploadJob>) => {
+    setUploadJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, ...updates } : j))
+    );
+  };
+
+  const updateQueuedJobsPositions = () => {
+    setUploadJobs((prev) =>
+      prev.map((j) => {
+        if (j.status !== 'queued') return j;
+        const idx = queueOrderRef.current.indexOf(j.id);
+        if (idx === -1) return j;
+        return {
+          ...j,
+          statusText: `Queued (#${idx + 1} in queue) — waiting for an upload slot...`,
+        };
+      })
+    );
+  };
+
+  const processQueue = () => {
+    while (activeUploadIdsRef.current.size < MAX_CONCURRENT_UPLOADS && queueOrderRef.current.length > 0) {
+      const nextJobId = queueOrderRef.current.shift();
+      if (!nextJobId) break;
+      const runner = queuedRunnersRef.current.get(nextJobId);
+      queuedRunnersRef.current.delete(nextJobId);
+      if (!runner) continue;
+
+      activeUploadIdsRef.current.add(nextJobId);
+      runner();
+    }
+    updateQueuedJobsPositions();
+  };
+
+  const cancelJob = (jobId: string) => {
+    // If job was waiting in the queue, remove it from queue
+    const queueIdx = queueOrderRef.current.indexOf(jobId);
+    if (queueIdx !== -1) {
+      queueOrderRef.current.splice(queueIdx, 1);
+      queuedRunnersRef.current.delete(jobId);
+      updateJob(jobId, { status: 'failed', statusText: 'Cancelled from queue' });
+      updateQueuedJobsPositions();
+      return;
+    }
+
+    if (tusUploadsRef.current[jobId]) {
+      try {
+        tusUploadsRef.current[jobId].abort();
+      } catch (e) {
+        console.error('Error aborting TUS upload:', e);
+      }
+      delete tusUploadsRef.current[jobId];
+    }
+    activeUploadIdsRef.current.delete(jobId);
+    updateJob(jobId, { status: 'failed', statusText: 'Cancelled by user' });
+    processQueue();
+  };
+
+  const removeJob = (jobId: string) => {
+    const queueIdx = queueOrderRef.current.indexOf(jobId);
+    if (queueIdx !== -1) {
+      queueOrderRef.current.splice(queueIdx, 1);
+      queuedRunnersRef.current.delete(jobId);
+    }
+    if (tusUploadsRef.current[jobId]) {
+      try {
+        tusUploadsRef.current[jobId].abort();
+      } catch (e) {
+        // ignore
+      }
+      delete tusUploadsRef.current[jobId];
+    }
+    activeUploadIdsRef.current.delete(jobId);
+    setUploadJobs((prev) => prev.filter((j) => j.id !== jobId));
+    processQueue();
+  };
+
+  const clearFinishedJobs = () => {
+    setUploadJobs((prev) => prev.filter((j) => j.status !== 'done' && j.status !== 'failed'));
+  };
+
+  // Auto-open upload section when uploading starts or any job is active
   useEffect(() => {
-    if (isUploading) setUploadSectionOpen(true);
-  }, [isUploading]);
+    if (isUploading || activeJobCount > 0) setUploadSectionOpen(true);
+  }, [isUploading, activeJobCount]);
 
   const addPendingUpload = (p: PendingUpload) => {
     setPendingUploads(prev => {
@@ -340,333 +457,510 @@ function OndemandContent() {
   };
 
   const handleUpload = async () => {
-    if ((!videoFile && !selectedVideoFromBunny && !selectedSfxVideo) || !selectedCollectionId || !videoTitle) {
+    if ((!videoFile && !selectedVideoFromBunny && !selectedSfxVideo) || !selectedCollectionId || !videoTitle.trim()) {
       alert('Please select a file (or existing video), a show, and provide a title.');
       return;
     }
-    if (!selectedSeasonId && !newSeasonTitle) {
+    if (!selectedSeasonId && !newSeasonTitle.trim()) {
       alert('Please select a season or enter a new season name.');
       return;
     }
 
-    setIsUploading(true);
-    setUploadProgress(0);
+    const title = videoTitle.trim();
+    const description = videoDescription.trim();
+    const showId = selectedCollectionId;
+    const showTitle = selectedShow?.title || 'Show';
+    const seasonId = newSeasonMode ? undefined : (selectedSeasonId || undefined);
+    const seasonTitle = newSeasonMode ? newSeasonTitle.trim() : (seasons.find((s) => s.id === selectedSeasonId)?.title || 'Season');
+    const server = uploadServer;
+    const tenant = sfxTenant;
+    const currentFile = videoFile;
+    const existingBunny = selectedVideoFromBunny;
+    const existingSfx = selectedSfxVideo;
 
-    if (uploadServer === 'sfx') {
-      if (selectedSfxVideo) {
-        await createSfxEpisodeFromExisting(selectedSfxVideo);
-        return;
-      }
-      if (!videoFile) {
-        alert('Please select a video file to upload to the SFX server.');
-        setIsUploading(false);
-        setUploadProgress(0);
-        return;
-      }
-      startSfxUpload();
+    // Reset the input form immediately so the admin can queue another video right away
+    setVideoFile(null);
+    setSelectedVideoFromBunny(null);
+    setSelectedSfxVideo(null);
+    setVideoTitle('');
+    setVideoDescription('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    // Case 1: Existing SFX video selected
+    if (server === 'sfx' && existingSfx) {
+      const job: UploadJob = {
+        id: jobId,
+        title,
+        description,
+        fileName: existingSfx.name,
+        fileSize: 0,
+        showId,
+        showTitle,
+        seasonId,
+        seasonTitle,
+        server: 'sfx',
+        status: 'uploading',
+        progress: 50,
+        statusText: `Adding "${existingSfx.name}"...`,
+        startedAt: Date.now(),
+      };
+      setUploadJobs((prev) => [job, ...prev]);
+      runExistingSfxJob(jobId, existingSfx, { title, description, showId, seasonId, seasonTitle });
       return;
     }
 
-    try {
-      let videoId = selectedVideoFromBunny;
+    // Case 2: Existing Bunny video selected
+    if (server === 'bunny' && existingBunny && !currentFile) {
+      const job: UploadJob = {
+        id: jobId,
+        title,
+        description,
+        fileName: title,
+        fileSize: 0,
+        showId,
+        showTitle,
+        seasonId,
+        seasonTitle,
+        server: 'bunny',
+        status: 'uploading',
+        progress: 50,
+        statusText: 'Adding existing Bunny video...',
+        startedAt: Date.now(),
+      };
+      setUploadJobs((prev) => [job, ...prev]);
+      runExistingBunnyJob(jobId, existingBunny, { title, description, showId, seasonId, seasonTitle });
+      return;
+    }
 
-      if (videoFile && !selectedVideoFromBunny) {
-        // Upload new video via TUS
-        const createTusUploadCallable = httpsCallable(functions, 'createTusUpload');
+    if (!currentFile) {
+      alert('Please select a video file to upload.');
+      return;
+    }
 
-        const resp = await createTusUploadCallable({
-          title: videoTitle,
-          collectionId: selectedCollectionId,
-          bunnyCollectionId: selectedShow?.bunnyGuid || '',
-        }) as any;
-
-        videoId = resp.data.videoId;
-        if (!videoId) {
-          throw new Error('createTusUpload returned no videoId');
-        }
-        const tusVideoId: string = videoId;
-        const { expirationTime, signature } = resp.data;
-
-        // Track this upload so it can be resumed if it fails.
-        fileRef.current = videoFile;
-        addPendingUpload({
-          videoId: tusVideoId,
-          fileName: videoFile.name,
-          fileType: videoFile.type || 'video/mp4',
-          title: videoTitle,
-          description: videoDescription,
-          showId: selectedCollectionId,
-          seasonId: newSeasonMode ? undefined : (selectedSeasonId || undefined),
-          seasonTitle: newSeasonMode ? (newSeasonTitle || undefined) : undefined,
-          startedAt: Date.now(),
+    // Case 3: SFX File Upload
+    if (server === 'sfx') {
+      const runner = () => {
+        runSfxUploadJob(jobId, currentFile, {
+          title,
+          description,
+          showId,
+          showTitle,
+          seasonId,
+          seasonTitle,
+          tenant,
         });
+      };
 
-        const upload = new tus.Upload(videoFile, {
-          endpoint: "https://video.bunnycdn.com/tusupload",
-          retryDelays: [0, 3000, 5000, 10000, 20000],
-          headers: {
-            'AuthorizationSignature': signature,
-            'AuthorizationExpire': expirationTime.toString(),
-            'VideoId': tusVideoId,
-            'LibraryId': '307069',
-          },
-          metadata: {
-            filename: videoFile.name,
-            filetype: videoFile.type,
-            title: videoTitle,
-            collection: selectedShow?.bunnyGuid || '',
-          },
-          onError: function (error) {
-            console.error("Failed because: " + error);
-            setIsUploading(false);
-            setUploadProgress(0);
-            alert('Upload paused. Resume it from the pending uploads below.');
-          },
-          onProgress: function (bytesUploaded, bytesTotal) {
-            const percentage = (bytesUploaded / bytesTotal * 100).toFixed(1);
-            setUploadProgress(parseFloat(percentage));
-          },
-          onSuccess: async function () {
-            const ok = await createEpisode(tusVideoId, {
-              showId: selectedCollectionId,
-              title: videoTitle,
-              description: videoDescription,
-              seasonId: newSeasonMode ? undefined : (selectedSeasonId || undefined),
-              seasonTitle: newSeasonMode ? (newSeasonTitle || undefined) : undefined,
-            });
-            if (ok) removePendingUpload(tusVideoId);
-          }
-        });
+      const canStartImmediately = activeUploadIdsRef.current.size < MAX_CONCURRENT_UPLOADS;
 
-        upload.start();
-        return;
+      const job: UploadJob = {
+        id: jobId,
+        title,
+        description,
+        fileName: currentFile.name,
+        fileSize: currentFile.size,
+        showId,
+        showTitle,
+        seasonId,
+        seasonTitle,
+        server: 'sfx',
+        status: canStartImmediately ? 'initiating' : 'queued',
+        progress: 0,
+        statusText: canStartImmediately
+          ? 'Preparing SFX upload...'
+          : `Queued (#${queueOrderRef.current.length + 1} in queue) — waiting for an upload slot...`,
+        startedAt: Date.now(),
+      };
+      setUploadJobs((prev) => [job, ...prev]);
+
+      if (canStartImmediately) {
+        activeUploadIdsRef.current.add(jobId);
+        runner();
+      } else {
+        queueOrderRef.current.push(jobId);
+        queuedRunnersRef.current.set(jobId, runner);
       }
+      return;
+    }
 
-      // Selected existing video — skip TUS, create episode directly
-      await createEpisode(videoId!, {
-        showId: selectedCollectionId,
-        title: videoTitle,
-        description: videoDescription,
-        seasonId: newSeasonMode ? undefined : (selectedSeasonId || undefined),
-        seasonTitle: newSeasonMode ? (newSeasonTitle || undefined) : undefined,
+    // Case 4: Bunny CDN File Upload
+    const bunnyRunner = () => {
+      runBunnyUploadJob(jobId, currentFile, {
+        title,
+        description,
+        showId,
+        showTitle,
+        seasonId,
+        seasonTitle,
+        bunnyCollectionId: selectedShow?.bunnyGuid || '',
       });
+    };
 
-    } catch (error: any) {
-      console.error('Error during upload process:', error);
-      alert(`Upload failed: ${error.message}`);
-      setIsUploading(false);
-      setUploadProgress(0);
+    const canStartBunny = activeUploadIdsRef.current.size < MAX_CONCURRENT_UPLOADS;
+
+    const job: UploadJob = {
+      id: jobId,
+      title,
+      description,
+      fileName: currentFile.name,
+      fileSize: currentFile.size,
+      showId,
+      showTitle,
+      seasonId,
+      seasonTitle,
+      server: 'bunny',
+      status: canStartBunny ? 'initiating' : 'queued',
+      progress: 0,
+      statusText: canStartBunny
+        ? 'Requesting Bunny upload signature...'
+        : `Queued (#${queueOrderRef.current.length + 1} in queue) — waiting for an upload slot...`,
+      startedAt: Date.now(),
+    };
+    setUploadJobs((prev) => [job, ...prev]);
+
+    if (canStartBunny) {
+      activeUploadIdsRef.current.add(jobId);
+      bunnyRunner();
+    } else {
+      queueOrderRef.current.push(jobId);
+      queuedRunnersRef.current.set(jobId, bunnyRunner);
     }
   };
 
-  const startSfxUpload = () => {
-    if (!videoFile) return;
+  const runBunnyUploadJob = async (
+    jobId: string,
+    file: File,
+    meta: {
+      title: string;
+      description: string;
+      showId: string;
+      showTitle: string;
+      seasonId?: string;
+      seasonTitle?: string;
+      bunnyCollectionId: string;
+    }
+  ) => {
+    try {
+      updateJob(jobId, { status: 'initiating', statusText: 'Requesting Bunny upload signature...' });
+      const createTusUploadCallable = httpsCallable(functions, 'createTusUpload');
+      const resp = (await createTusUploadCallable({
+        title: meta.title,
+        collectionId: meta.showId,
+        bunnyCollectionId: meta.bunnyCollectionId || '',
+      })) as any;
 
+      const tusVideoId: string = resp.data.videoId;
+      if (!tusVideoId) {
+        throw new Error('createTusUpload returned no videoId');
+      }
+      const { expirationTime, signature } = resp.data;
+
+      updateJob(jobId, {
+        bunnyVideoId: tusVideoId,
+        status: 'uploading',
+        statusText: 'Uploading to Bunny CDN (0%)...',
+      });
+
+      addPendingUpload({
+        videoId: tusVideoId,
+        fileName: file.name,
+        fileType: file.type || 'video/mp4',
+        title: meta.title,
+        description: meta.description,
+        showId: meta.showId,
+        seasonId: meta.seasonId,
+        seasonTitle: meta.seasonTitle,
+        startedAt: Date.now(),
+      });
+
+      const upload = new tus.Upload(file, {
+        endpoint: 'https://video.bunnycdn.com/tusupload',
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        headers: {
+          AuthorizationSignature: signature,
+          AuthorizationExpire: expirationTime.toString(),
+          VideoId: tusVideoId,
+          LibraryId: '307069',
+        },
+        metadata: {
+          filename: file.name,
+          filetype: file.type,
+          title: meta.title,
+          collection: meta.bunnyCollectionId || '',
+        },
+        onError: function (error) {
+          console.error(`Bunny upload error for job ${jobId}:`, error);
+          delete tusUploadsRef.current[jobId];
+          activeUploadIdsRef.current.delete(jobId);
+          processQueue();
+          updateJob(jobId, {
+            status: 'failed',
+            error: String(error),
+            statusText: 'Upload failed: ' + error,
+          });
+        },
+        onProgress: function (bytesUploaded, bytesTotal) {
+          const percentage = parseFloat(((bytesUploaded / bytesTotal) * 100).toFixed(1));
+          updateJob(jobId, {
+            progress: percentage,
+            status: 'uploading',
+            statusText: `Uploading to Bunny CDN (${percentage}%)...`,
+          });
+        },
+        onSuccess: async function () {
+          delete tusUploadsRef.current[jobId];
+          activeUploadIdsRef.current.delete(jobId);
+          processQueue();
+          updateJob(jobId, {
+            progress: 100,
+            status: 'transcoding',
+            statusText: 'Upload finished. Registering episode record...',
+          });
+
+          try {
+            const episodePayload: Record<string, unknown> = {
+              showId: meta.showId,
+              videoId: tusVideoId,
+              title: meta.title,
+              description: meta.description,
+              server: 'bunny',
+            };
+            if (meta.seasonTitle) {
+              episodePayload.seasonTitle = meta.seasonTitle;
+            } else if (meta.seasonId) {
+              episodePayload.seasonId = meta.seasonId;
+            }
+
+            await ondemandProxy('createEpisodeFromBunnyUpload', episodePayload);
+            removePendingUpload(tusVideoId);
+            updateJob(jobId, {
+              status: 'done',
+              statusText: 'Completed! Ready on Bunny CDN.',
+              completedAt: Date.now(),
+            });
+            queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+          } catch (err: any) {
+            console.error(`Failed to create episode record for ${jobId}:`, err);
+            updateJob(jobId, {
+              status: 'failed',
+              error: err.message,
+              statusText: 'Upload completed but episode creation failed: ' + err.message,
+            });
+          }
+        },
+      });
+
+      tusUploadsRef.current[jobId] = upload;
+      upload.start();
+    } catch (err: any) {
+      console.error(`Error initializing Bunny upload for job ${jobId}:`, err);
+      delete tusUploadsRef.current[jobId];
+      activeUploadIdsRef.current.delete(jobId);
+      processQueue();
+      updateJob(jobId, {
+        status: 'failed',
+        error: err.message,
+        statusText: 'Init failed: ' + err.message,
+      });
+    }
+  };
+
+  const runSfxUploadJob = async (
+    jobId: string,
+    file: File,
+    meta: {
+      title: string;
+      description: string;
+      showId: string;
+      showTitle: string;
+      seasonId?: string;
+      seasonTitle?: string;
+      tenant: 'tv' | 'fm';
+    }
+  ) => {
     const sanitizePathSegment = (s: string) =>
       s.trim().replace(/[\\/:*?"<>|\s]+/g, '_') || 'Untitled';
 
-    // Build the SFX file path from the on-demand hierarchy (show/season/episode).
-    // Folders in the filename metadata become collections on the server.
-    const showTitle = sanitizePathSegment(selectedShow?.title || 'Show');
-    const seasonTitle = sanitizePathSegment(
-      newSeasonMode && newSeasonTitle
-        ? newSeasonTitle
-        : (seasons.find((s) => s.id === selectedSeasonId)?.title || 'Season')
-    );
-    const episodeTitle = sanitizePathSegment(
-      videoTitle || videoFile.name.replace(/\.[^.]+$/, '')
-    );
-    const ext = videoFile.name.includes('.')
-      ? '.' + videoFile.name.split('.').pop()
-      : '';
+    const showTitle = sanitizePathSegment(meta.showTitle || 'Show');
+    const seasonTitle = sanitizePathSegment(meta.seasonTitle || 'Season');
+    const episodeTitle = sanitizePathSegment(meta.title || file.name.replace(/\.[^.]+$/, ''));
+    const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
 
     const uploadFilename = `${showTitle}/${seasonTitle}/${episodeTitle}${ext}`;
     const jobName = uploadFilename.replace(/\.[^.]+$/, '');
 
-    const upload = new tus.Upload(videoFile, {
+    updateJob(jobId, {
+      sfxJobName: jobName,
+      status: 'uploading',
+      statusText: 'Uploading to SFX Server (0%)...',
+    });
+
+    const upload = new tus.Upload(file, {
       endpoint: 'https://upload.solofx.net/files',
       retryDelays: [0, 3000, 5000, 10000, 20000],
       chunkSize: 50 * 1024 * 1024,
       metadata: {
         filename: uploadFilename,
-        tenant: (sfxTenant === 'fm'
+        tenant: (meta.tenant === 'fm'
           ? process.env.NEXT_PUBLIC_SFX_TENANT_FM || ''
           : process.env.NEXT_PUBLIC_SFX_TENANT_TV || '').trim(),
         codec: 'av1',
       },
       storeFingerprintForResuming: true,
       onError: function (error) {
-        console.error('SFX upload failed:', error);
-        alert('SFX upload failed: ' + error);
-        setIsUploading(false);
-        setUploadProgress(0);
-        setSfxStatusText(null);
+        console.error(`SFX upload error for job ${jobId}:`, error);
+        delete tusUploadsRef.current[jobId];
+        activeUploadIdsRef.current.delete(jobId);
+        processQueue();
+        updateJob(jobId, {
+          status: 'failed',
+          error: String(error),
+          statusText: 'SFX upload failed: ' + error,
+        });
       },
       onProgress: function (bytesUploaded, bytesTotal) {
-        const percentage = (bytesUploaded / bytesTotal * 100).toFixed(1);
-        setUploadProgress(parseFloat(percentage));
+        const percentage = parseFloat(((bytesUploaded / bytesTotal) * 100).toFixed(1));
+        updateJob(jobId, {
+          progress: percentage,
+          status: 'uploading',
+          statusText: `Uploading to SFX Server (${percentage}%)...`,
+        });
       },
       onSuccess: async function () {
-        const episodeRef = await createSfxEpisodeEarly(jobName);
-        pollSfxJob(jobName, episodeRef);
-      }
+        delete tusUploadsRef.current[jobId];
+        activeUploadIdsRef.current.delete(jobId);
+        processQueue();
+        updateJob(jobId, {
+          progress: 100,
+          status: 'transcoding',
+          statusText: 'Upload finished. Registering early episode...',
+        });
+
+        // Register episode early in Supabase
+        let episodeRef: { id: string; seasonId: string } | null = null;
+        try {
+          const tenantPath = (meta.tenant === 'fm'
+            ? process.env.NEXT_PUBLIC_SFX_TENANT_FM_PATH || ''
+            : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '').trim();
+          const constructedUrl = `https://objects.solofx.net${tenantPath}/hls/${jobName.split('/').map(encodeURIComponent).join('/')}/index.m3u8`;
+          const payload: Record<string, unknown> = {
+            showId: meta.showId,
+            videoUrl: constructedUrl,
+            sfxJobName: jobName,
+            title: meta.title,
+            description: meta.description,
+            published: false,
+            processing: true,
+          };
+          if (meta.seasonTitle) payload.seasonTitle = meta.seasonTitle;
+          else if (meta.seasonId) payload.seasonId = meta.seasonId;
+
+          const res = await ondemandProxy('createSfxEpisode', payload);
+          episodeRef = res.episode as { id: string; seasonId: string } | null;
+        } catch (err: any) {
+          console.error(`Failed to register early SFX episode for ${jobId}:`, err);
+        }
+
+        // Poll SFX transcode job
+        updateJob(jobId, {
+          status: 'transcoding',
+          statusText: `Transcoding started on SFX (${jobName})...`,
+        });
+
+        let attempts = 0;
+        while (attempts < 600) {
+          await new Promise((r) => setTimeout(r, 3000));
+          attempts++;
+          try {
+            const res = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(jobName)}`);
+            if (!res.ok) continue;
+            const sfx = await res.json();
+            const sfxStatus = sfx.status || '';
+            const stage = sfx.stage || 'encoding';
+            const stagePct = typeof sfx.stagePct === 'number' ? sfx.stagePct : 0;
+
+            updateJob(jobId, {
+              progress: stagePct > 0 ? stagePct : 100,
+              statusText: `Transcoding on SFX (${stage}${sfx.current ? ' — ' + sfx.current : ''}${sfx.eta ? ' — ETA ' + sfx.eta : ''})...`,
+            });
+
+            if (sfxStatus === 'done') {
+              let duration = 0;
+              try {
+                const durRes = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(jobName)}&kind=duration`);
+                if (durRes.ok) {
+                  const dur = await durRes.json();
+                  duration = typeof dur.duration === 'number' ? dur.duration : 0;
+                }
+              } catch (err) {
+                console.error('SFX duration fetch error:', err);
+              }
+
+              const thumbnail = sfx.hlsUrl?.replace(/\/index\.m3u8$/, '/poster.jpg') || '';
+              if (episodeRef) {
+                await ondemandProxy('updateEpisode', {
+                  showId: meta.showId,
+                  seasonId: episodeRef.seasonId,
+                  episodeId: episodeRef.id,
+                  updates: {
+                    videoUrl: sfx.hlsUrl || '',
+                    thumbnail,
+                    duration,
+                    processing: false,
+                  },
+                });
+              }
+
+              updateJob(jobId, {
+                status: 'done',
+                progress: 100,
+                statusText: 'Transcoding complete! Video ready.',
+                completedAt: Date.now(),
+              });
+              queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+              return;
+            }
+
+            if (sfxStatus === 'failed') {
+              if (episodeRef) {
+                await ondemandProxy('updateEpisode', {
+                  showId: meta.showId,
+                  seasonId: episodeRef.seasonId,
+                  episodeId: episodeRef.id,
+                  updates: { processing: false },
+                });
+              }
+              updateJob(jobId, {
+                status: 'failed',
+                statusText: `SFX transcoding failed for job "${jobName}".`,
+              });
+              return;
+            }
+          } catch (pollErr) {
+            console.error('Error polling SFX job:', pollErr);
+          }
+        }
+
+        updateJob(jobId, {
+          status: 'failed',
+          statusText: 'Timed out waiting for SFX transcode to complete.',
+        });
+      },
     });
 
+    tusUploadsRef.current[jobId] = upload;
     upload.start();
   };
 
-  const createSfxEpisodeEarly = async (jobName: string) => {
-    const tenantPath = (sfxTenant === 'fm'
-      ? process.env.NEXT_PUBLIC_SFX_TENANT_FM_PATH || ''
-      : process.env.NEXT_PUBLIC_SFX_TENANT_TV_PATH || '').trim();
-    const constructedUrl = `https://objects.solofx.net${tenantPath}/hls/${jobName.split('/').map(encodeURIComponent).join('/')}/index.m3u8`;
-    try {
-      const payload: Record<string, unknown> = {
-        showId: selectedCollectionId,
-        videoUrl: constructedUrl,
-        sfxJobName: jobName,
-        title: videoTitle,
-        description: videoDescription,
-        published: false,
-        processing: true,
-      };
-      if (newSeasonMode && newSeasonTitle) {
-        payload.seasonTitle = newSeasonTitle;
-      } else if (selectedSeasonId) {
-        payload.seasonId = selectedSeasonId;
-      }
-      const res = await ondemandProxy('createSfxEpisode', payload);
-      return res.episode as { id: string; seasonId: string } | null;
-    } catch (err) {
-      console.error('Failed to create SFX episode early:', err);
-      return null;
-    }
-  };
-
-  const updateSfxEpisode = async (
-    episodeRef: { id: string; seasonId: string } | null,
-    updates: Record<string, unknown>
+  const runExistingSfxJob = async (
+    jobId: string,
+    video: SfxVideo,
+    meta: { title: string; description: string; showId: string; seasonId?: string; seasonTitle?: string }
   ) => {
-    if (!episodeRef) return;
-    try {
-      await ondemandProxy('updateEpisode', {
-        showId: selectedCollectionId,
-        seasonId: episodeRef.seasonId,
-        episodeId: episodeRef.id,
-        updates,
-      });
-    } catch (err) {
-      console.error('Failed to update SFX episode:', err);
-    }
-  };
-
-  const pollSfxJob = async (jobName: string, episodeRef?: { id: string; seasonId: string } | null) => {
-    setSfxStatusText(`Transcoding started (${jobName})...`);
-    let attempts = 0;
-    while (attempts < 600) {
-      await new Promise(r => setTimeout(r, 3000));
-      attempts++;
-      try {
-        const res = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(jobName)}`);
-        if (!res.ok) continue;
-        const job = await res.json();
-        const status = job.status || '';
-        const stage = job.stage || 'encoding';
-        const stagePct = typeof job.stagePct === 'number' ? job.stagePct : 0;
-
-        setSfxStatusText(
-          `Transcoding on SFX (${stage}${job.current ? ' — ' + job.current : ''}${job.eta ? ' — ETA ' + job.eta : ''})...`
-        );
-        if (stagePct > 0) setUploadProgress(stagePct);
-
-        if (status === 'done') {
-          let duration = 0;
-          try {
-            const durRes = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(jobName)}&kind=duration`);
-            if (durRes.ok) {
-              const dur = await durRes.json();
-              duration = typeof dur.duration === 'number' ? dur.duration : 0;
-            }
-          } catch (err) {
-            console.error('SFX duration fetch error:', err);
-          }
-          const thumbnail = job.hlsUrl?.replace(/\/index\.m3u8$/, '/poster.jpg') || '';
-          if (episodeRef) {
-            await updateSfxEpisode(episodeRef, {
-              videoUrl: job.hlsUrl || '',
-              thumbnail,
-              duration,
-              processing: false,
-            });
-          } else {
-            await createSfxEpisode(jobName, job.hlsUrl || '', duration, thumbnail);
-          }
-          alert('Video uploaded and added successfully!');
-          resetSfxUploadState();
-          return;
-        }
-        if (status === 'failed') {
-          if (episodeRef) {
-            await updateSfxEpisode(episodeRef, { processing: false });
-          }
-          alert(`SFX transcoding failed for job "${jobName}".`);
-          resetSfxUploadState();
-          return;
-        }
-      } catch (err) {
-        console.error('SFX job polling error:', err);
-      }
-    }
-    alert('Timed out waiting for SFX transcode to complete. Check the SFX admin for job status.');
-    resetSfxUploadState();
-  };
-
-  const createSfxEpisode = async (jobName: string, hlsUrl: string, duration: number, thumbnail: string, titleOverride?: string) => {
-    try {
-      const episodePayload: Record<string, unknown> = {
-        showId: selectedCollectionId,
-        videoUrl: hlsUrl,
-        sfxJobName: jobName,
-        title: titleOverride || videoTitle,
-        description: videoDescription,
-        duration,
-        thumbnail,
-      };
-      if (newSeasonMode && newSeasonTitle) {
-        episodePayload.seasonTitle = newSeasonTitle;
-      } else if (selectedSeasonId) {
-        episodePayload.seasonId = selectedSeasonId;
-      }
-      await ondemandProxy('createSfxEpisode', episodePayload);
-    } catch (episodeError) {
-      console.error('Failed to create SFX episode record:', episodeError);
-    }
-    alert('Video uploaded and added successfully!');
-    resetSfxUploadState();
-  };
-
-  const resetSfxUploadState = () => {
-    setIsUploading(false);
-    setUploadProgress(0);
-    setSfxStatusText(null);
-    setVideoFile(null);
-    setSelectedVideoFromBunny(null);
-    setSelectedSfxVideo(null);
-    setVideoTitle('');
-    setVideoDescription('');
-    setNewSeasonMode(false);
-    setNewSeasonTitle('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-    queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
-  };
-
-  const createSfxEpisodeFromExisting = async (video: SfxVideo) => {
-    setIsUploading(true);
-    setUploadProgress(0);
-    setSfxStatusText(`Adding "${video.name}"...`);
-
     let duration = 0;
     try {
       const durRes = await fetch(`/api/sfx/jobs?name=${encodeURIComponent(video.name)}&kind=duration`);
@@ -678,76 +972,83 @@ function OndemandContent() {
       console.error('SFX duration fetch error:', err);
     }
 
-    if (!videoTitle) {
-      setVideoTitle(video.name);
-    }
-    await createSfxEpisode(video.name, video.hlsUrl || '', duration, video.thumbUrl || '', videoTitle || video.name);
-  };
-
-  const createEpisode = async (
-    videoId: string,
-    opts: { showId: string; title: string; description: string; seasonId?: string; seasonTitle?: string }
-  ): Promise<boolean> => {
     try {
       const episodePayload: Record<string, unknown> = {
-        showId: opts.showId,
-        videoId: videoId,
-        title: opts.title,
-        description: opts.description,
-        server: 'bunny',
+        showId: meta.showId,
+        videoUrl: video.hlsUrl || '',
+        sfxJobName: video.name,
+        title: meta.title,
+        description: meta.description,
+        duration,
+        thumbnail: video.thumbUrl || '',
       };
-      if (opts.seasonTitle) {
-        episodePayload.seasonTitle = opts.seasonTitle;
-      } else if (opts.seasonId) {
-        episodePayload.seasonId = opts.seasonId;
-      }
-      // Mesh-first: the mesh polls Bunny for metadata and is the authoritative
-      // writer (season + episode in Supabase); Firebase is mirrored afterwards.
-      await ondemandProxy('createEpisodeFromBunnyUpload', episodePayload);
-    } catch (episodeError) {
-      console.error('Failed to create episode record:', episodeError);
-      setIsUploading(false);
-      setUploadProgress(0);
-      return false;
+      if (meta.seasonTitle) episodePayload.seasonTitle = meta.seasonTitle;
+      else if (meta.seasonId) episodePayload.seasonId = meta.seasonId;
+
+      await ondemandProxy('createSfxEpisode', episodePayload);
+      updateJob(jobId, {
+        status: 'done',
+        progress: 100,
+        statusText: 'Added successfully!',
+        completedAt: Date.now(),
+      });
+      queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+    } catch (err: any) {
+      updateJob(jobId, {
+        status: 'failed',
+        error: err.message,
+        statusText: 'Failed: ' + err.message,
+      });
     }
-    alert('Video added successfully!');
-    setIsUploading(false);
-    setUploadProgress(0);
-    setVideoFile(null);
-    setSelectedVideoFromBunny(null);
-    setVideoTitle('');
-    setVideoDescription('');
-    setNewSeasonMode(false);
-    setNewSeasonTitle('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-    queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
-    return true;
   };
 
-  const resumeUpload = async (pending: PendingUpload) => {
-    const file = fileRef.current;
-    if (!file) {
-      alert(`Please re-select the file "${pending.fileName}" (the same file) to resume it.`);
-      return;
+  const runExistingBunnyJob = async (
+    jobId: string,
+    videoId: string,
+    meta: { title: string; description: string; showId: string; seasonId?: string; seasonTitle?: string }
+  ) => {
+    try {
+      const episodePayload: Record<string, unknown> = {
+        showId: meta.showId,
+        videoId,
+        title: meta.title,
+        description: meta.description,
+        server: 'bunny',
+      };
+      if (meta.seasonTitle) episodePayload.seasonTitle = meta.seasonTitle;
+      else if (meta.seasonId) episodePayload.seasonId = meta.seasonId;
+
+      await ondemandProxy('createEpisodeFromBunnyUpload', episodePayload);
+      updateJob(jobId, {
+        status: 'done',
+        progress: 100,
+        statusText: 'Added successfully!',
+        completedAt: Date.now(),
+      });
+      queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+    } catch (err: any) {
+      updateJob(jobId, {
+        status: 'failed',
+        error: err.message,
+        statusText: 'Failed: ' + err.message,
+      });
     }
-    setIsUploading(true);
-    setUploadProgress(0);
+  };
+
+  const runResumeUploadAction = async (jobId: string, file: File, pending: PendingUpload) => {
     try {
       const resumeCallable = httpsCallable(functions, 'resumeTusUpload');
-      const resp = await resumeCallable({ videoId: pending.videoId }) as any;
+      const resp = (await resumeCallable({ videoId: pending.videoId })) as any;
       const { expirationTime, signature } = resp.data;
 
       const upload = new tus.Upload(file, {
-        // Bunny's TUS upload URL uses the videoId WITHOUT dashes.
         uploadUrl: `https://video.bunnycdn.com/tusupload/${pending.videoId.replace(/-/g, '')}`,
         retryDelays: [0, 3000, 5000, 10000, 20000],
         headers: {
-          'AuthorizationSignature': signature,
-          'AuthorizationExpire': expirationTime.toString(),
-          'VideoId': pending.videoId,
-          'LibraryId': '307069',
+          AuthorizationSignature: signature,
+          AuthorizationExpire: expirationTime.toString(),
+          VideoId: pending.videoId,
+          LibraryId: '307069',
         },
         metadata: {
           filename: pending.fileName,
@@ -757,55 +1058,120 @@ function OndemandContent() {
         },
         onError: function (error) {
           console.error('Resume failed:', error);
+          delete tusUploadsRef.current[jobId];
+          activeUploadIdsRef.current.delete(jobId);
+          processQueue();
           const msg = error?.message || String(error);
           const code = msg.match(/response code: (\d+)/)?.[1];
           if (code === '404') {
-            // The Bunny TUS session is gone — the video finished uploading.
-            // Create the episode record; keep the pending entry if the video
-            // isn't actually processed yet.
             console.warn('[resumeUpload] upload session gone, finalizing episode:', pending.videoId);
-            createEpisode(pending.videoId, {
+            ondemandProxy('createEpisodeFromBunnyUpload', {
               showId: pending.showId,
+              videoId: pending.videoId,
               title: pending.title,
               description: pending.description || '',
               seasonId: pending.seasonId,
               seasonTitle: pending.seasonTitle,
-            }).then((ok) => {
-              if (ok) {
+              server: 'bunny',
+            })
+              .then(() => {
                 removePendingUpload(pending.videoId);
-              } else {
-                setIsUploading(false);
-                setUploadProgress(0);
-                alert('The video isn\'t fully processed yet. You can try Resume again later, or Discard and re-upload.');
-              }
-            });
+                updateJob(jobId, { status: 'done', progress: 100, statusText: 'Finalized!' });
+                queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+              })
+              .catch((err) => {
+                updateJob(jobId, { status: 'failed', statusText: 'Finalize failed: ' + err.message });
+              });
             return;
           }
-          setIsUploading(false);
-          setUploadProgress(0);
-          alert('Upload paused. You can resume it again from pending uploads.');
+          updateJob(jobId, { status: 'failed', statusText: 'Resume paused: ' + msg });
         },
         onProgress: function (bytesUploaded, bytesTotal) {
-          const percentage = (bytesUploaded / bytesTotal * 100).toFixed(1);
-          setUploadProgress(parseFloat(percentage));
+          const percentage = parseFloat(((bytesUploaded / bytesTotal) * 100).toFixed(1));
+          updateJob(jobId, {
+            progress: percentage,
+            status: 'uploading',
+            statusText: `Resuming upload (${percentage}%)...`,
+          });
         },
         onSuccess: async function () {
-          const ok = await createEpisode(pending.videoId, {
-            showId: pending.showId,
-            title: pending.title,
-            description: pending.description || '',
-            seasonId: pending.seasonId,
-            seasonTitle: pending.seasonTitle,
-          });
-          if (ok) removePendingUpload(pending.videoId);
+          delete tusUploadsRef.current[jobId];
+          activeUploadIdsRef.current.delete(jobId);
+          processQueue();
+          try {
+            await ondemandProxy('createEpisodeFromBunnyUpload', {
+              showId: pending.showId,
+              videoId: pending.videoId,
+              title: pending.title,
+              description: pending.description || '',
+              seasonId: pending.seasonId,
+              seasonTitle: pending.seasonTitle,
+              server: 'bunny',
+            });
+            removePendingUpload(pending.videoId);
+            updateJob(jobId, {
+              status: 'done',
+              progress: 100,
+              statusText: 'Resumed upload completed!',
+              completedAt: Date.now(),
+            });
+            queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+          } catch (err: any) {
+            updateJob(jobId, { status: 'failed', statusText: 'Failed: ' + err.message });
+          }
         },
       });
+
+      tusUploadsRef.current[jobId] = upload;
       upload.start();
     } catch (e: any) {
       console.error('Resume setup failed:', e);
-      setIsUploading(false);
-      setUploadProgress(0);
-      alert('Failed to resume upload: ' + (e?.message || e));
+      delete tusUploadsRef.current[jobId];
+      activeUploadIdsRef.current.delete(jobId);
+      processQueue();
+      updateJob(jobId, { status: 'failed', statusText: 'Resume setup failed: ' + e.message });
+    }
+  };
+
+  const resumeUpload = async (pending: PendingUpload) => {
+    const file = fileRef.current;
+    if (!file) {
+      alert(`Please re-select the file "${pending.fileName}" (the same file) to resume it.`);
+      return;
+    }
+    const jobId = `resume_${pending.videoId}_${Date.now()}`;
+    const canStartImmediately = activeUploadIdsRef.current.size < MAX_CONCURRENT_UPLOADS;
+    const runner = () => {
+      runResumeUploadAction(jobId, file, pending);
+    };
+
+    const job: UploadJob = {
+      id: jobId,
+      title: pending.title,
+      description: pending.description || '',
+      fileName: pending.fileName,
+      fileSize: file.size,
+      showId: pending.showId,
+      showTitle: data?.documents.find((d) => d.id === pending.showId)?.title || 'Show',
+      seasonId: pending.seasonId,
+      seasonTitle: pending.seasonTitle,
+      server: 'bunny',
+      bunnyVideoId: pending.videoId,
+      status: canStartImmediately ? 'initiating' : 'queued',
+      progress: 0,
+      statusText: canStartImmediately
+        ? 'Resuming Bunny upload...'
+        : `Queued (#${queueOrderRef.current.length + 1} in queue) — waiting for an upload slot...`,
+      startedAt: Date.now(),
+    };
+    setUploadJobs((prev) => [job, ...prev]);
+
+    if (canStartImmediately) {
+      activeUploadIdsRef.current.add(jobId);
+      runner();
+    } else {
+      queueOrderRef.current.push(jobId);
+      queuedRunnersRef.current.set(jobId, runner);
     }
   };
 
@@ -950,8 +1316,12 @@ function OndemandContent() {
             <h2 className="text-lg font-semibold text-white">Upload New Video</h2>
             <p className="text-sm text-white/50">Upload a video file to any show</p>
           </div>
-          {isUploading && (
-            <span className="text-xs text-blue-300 bg-blue-500/15 border border-blue-500/30 rounded-full px-2.5 py-0.5 mr-2">Uploading...</span>
+          {activeJobCount > 0 && (
+            <span className="text-xs text-blue-300 bg-blue-500/15 border border-blue-500/30 rounded-full px-2.5 py-0.5 mr-2">
+              {activeUploadsCount > 0 ? `${activeUploadsCount}/3 uploading` : ''}
+              {queuedJobsCount > 0 ? `${activeUploadsCount > 0 ? ' · ' : ''}${queuedJobsCount} queued` : ''}
+              {transcodingJobsCount > 0 ? `${activeUploadsCount > 0 || queuedJobsCount > 0 ? ' · ' : ''}${transcodingJobsCount} transcoding` : ''}
+            </span>
           )}
           <ChevronDown
             size={20}
@@ -1262,21 +1632,144 @@ function OndemandContent() {
             </div>
           )}
 
-          {isUploading && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs text-white/60">
-                <span>
-                  {uploadServer === 'sfx' && sfxStatusText
-                    ? sfxStatusText
-                    : `Uploading to ${uploadServer === 'sfx' ? 'SFX Server' : 'Bunny CDN'}...`}
-                </span>
-                <span className="font-mono">{uploadProgress}%</span>
+          {/* Active & Recent Upload Jobs List */}
+          {uploadJobs.length > 0 && (
+            <div className="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      activeUploadsCount > 0
+                        ? 'bg-blue-400 animate-pulse'
+                        : queuedJobsCount > 0
+                        ? 'bg-amber-400'
+                        : 'bg-white/40'
+                    }`}
+                  />
+                  <h3 className="text-sm font-semibold text-white tracking-wide">
+                    Upload & Transcode Tasks ({activeUploadsCount}/3 active uploads
+                    {queuedJobsCount > 0 ? ` · ${queuedJobsCount} queued` : ''}
+                    {transcodingJobsCount > 0 ? ` · ${transcodingJobsCount} transcoding` : ''})
+                  </h3>
+                </div>
+                {uploadJobs.some((j) => j.status === 'done' || j.status === 'failed') && (
+                  <button
+                    onClick={clearFinishedJobs}
+                    className="text-xs text-white/50 hover:text-white transition"
+                  >
+                    Clear finished
+                  </button>
+                )}
               </div>
-              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+
+              <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
+                {uploadJobs.map((job) => {
+                  const isQueued = job.status === 'queued';
+                  const isRunning = job.status === 'uploading' || job.status === 'initiating' || job.status === 'transcoding';
+                  const isDone = job.status === 'done';
+                  const isFailed = job.status === 'failed';
+
+                  return (
+                    <div
+                      key={job.id}
+                      className={`p-3 rounded-lg border transition ${
+                        isDone
+                          ? 'bg-green-950/20 border-green-500/30'
+                          : isFailed
+                          ? 'bg-red-950/20 border-red-500/30'
+                          : isQueued
+                          ? 'bg-amber-950/20 border-amber-500/30'
+                          : 'bg-white/5 border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span
+                              className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
+                                job.server === 'bunny' ? 'bg-orange-500/20 text-orange-300' : 'bg-purple-500/20 text-purple-300'
+                              }`}
+                            >
+                              {job.server === 'bunny' ? 'Bunny CDN' : 'SFX'}
+                            </span>
+                            {isQueued && (
+                              <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                Queued
+                              </span>
+                            )}
+                            <span className="text-sm font-medium text-white truncate">{job.title}</span>
+                            {job.fileSize > 0 && (
+                              <span className="text-xs text-white/40 shrink-0">
+                                ({(job.fileSize / (1024 * 1024)).toFixed(1)} MB)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-white/50 truncate">
+                            {job.showTitle} → {job.seasonTitle || 'Season'}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {(isRunning || isQueued) && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => cancelJob(job.id)}
+                              className="h-7 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 px-2"
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                          {(isDone || isFailed) && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => removeJob(job.id)}
+                              className="h-7 text-xs text-white/40 hover:text-white px-2"
+                            >
+                              Dismiss
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              isDone
+                                ? 'bg-green-500'
+                                : isFailed
+                                ? 'bg-red-500'
+                                : isQueued
+                                ? 'bg-amber-400/40'
+                                : 'bg-gradient-to-r from-blue-500 to-purple-500'
+                            }`}
+                            style={{ width: `${isQueued ? 0 : Math.min(100, Math.max(0, job.progress))}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span
+                            className={`truncate max-w-[80%] ${
+                              isDone
+                                ? 'text-green-400'
+                                : isFailed
+                                ? 'text-red-400'
+                                : isQueued
+                                ? 'text-amber-300'
+                                : 'text-white/60'
+                            }`}
+                          >
+                            {job.statusText}
+                          </span>
+                          <span className="font-mono text-white/70">
+                            {isQueued ? 'In Queue' : `${job.progress}%`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1317,19 +1810,27 @@ function OndemandContent() {
           <div className="flex items-center gap-3 pt-2">
             <Button
               onClick={handleUpload}
-              disabled={isUploading || (!videoFile && !selectedVideoFromBunny && !selectedSfxVideo)}
+              disabled={(!videoFile && !selectedVideoFromBunny && !selectedSfxVideo) || !selectedCollectionId || !videoTitle.trim()}
               className="bg-blue-600 hover:bg-blue-700 text-white h-10 px-6"
             >
               <HugeiconsIcon icon={CloudUploadIcon} size={16} className="mr-2" />
-              {isUploading ? 'Uploading...' : selectedVideoFromBunny || selectedSfxVideo ? 'Save' : 'Start Upload'}
+              {selectedVideoFromBunny || selectedSfxVideo
+                ? 'Save Episode'
+                : activeUploadsCount >= 3
+                ? 'Queue Upload (Limit 3)'
+                : uploadJobs.length > 0
+                ? 'Start Upload'
+                : 'Start Upload'}
             </Button>
-            {videoFile && !isUploading && (
-              <span className="text-xs text-white/40">{videoFile.name}</span>
+            {videoFile && (
+              <span className="text-xs text-white/40">
+                Selected: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)
+              </span>
             )}
-            {selectedVideoFromBunny && !isUploading && (
-              <span className="text-xs text-green-400/60">Existing video selected</span>
+            {selectedVideoFromBunny && (
+              <span className="text-xs text-green-400/60">Existing Bunny video selected</span>
             )}
-            {selectedSfxVideo && !isUploading && (
+            {selectedSfxVideo && (
               <span className="text-xs text-green-400/60">Existing SFX video selected</span>
             )}
           </div>
