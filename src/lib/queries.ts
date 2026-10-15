@@ -5,14 +5,21 @@ import { app } from './firebase';
  * Fetch all on-demand shows (list view)
  * Returns shows with titles, episode counts, seasons count
  */
-export const fetchOnDemandData = async ({ queryKey: _ }: { queryKey: any }) => {
+export const fetchOnDemandData = async ({ queryKey }: { queryKey?: any } = {}) => {
   try {
-    const res = await fetch('/api/ondemand', { cache: 'no-store' });
+    const refresh = queryKey?.[1]?.refresh ? '?refresh=1' : '';
+    const res = await fetch(`/api/ondemand${refresh}`, { cache: 'no-store' });
+    const text = await res.text();
+    let result: any = null;
+    try {
+      result = text ? JSON.parse(text) : null;
+    } catch {
+      result = null;
+    }
 
     if (!res.ok) {
-      throw new Error(`On-demand fetch failed: ${res.status}`);
+      throw new Error(result?.error || text || `On-demand fetch failed: ${res.status}`);
     }
-    const result = await res.json();
 
     console.log('[fetchOnDemandData] Data loaded from:', result.source);
 
@@ -43,11 +50,17 @@ export const fetchOnDemandData = async ({ queryKey: _ }: { queryKey: any }) => {
 export const fetchOnDemandShowById = async (showId: string) => {
   try {
     const res = await fetch(`/api/ondemand?mode=show&showId=${encodeURIComponent(showId)}`, { cache: 'no-store' });
+    const text = await res.text();
+    let result: any = null;
+    try {
+      result = text ? JSON.parse(text) : null;
+    } catch {
+      result = null;
+    }
 
     if (!res.ok) {
-      throw new Error(`On-demand show fetch failed: ${res.status}`);
+      throw new Error(result?.error || text || `On-demand show fetch failed: ${res.status}`);
     }
-    const result = await res.json();
 
     console.log('[fetchOnDemandShowById] Show loaded from:', result.source);
 

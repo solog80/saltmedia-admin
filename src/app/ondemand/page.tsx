@@ -126,9 +126,15 @@ async function ondemandProxy(action: string, body: Record<string, unknown> = {})
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...body }),
   });
-  const data = await res.json();
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
   if (!res.ok) {
-    throw new Error(data?.error || `On-demand ${action} failed (${res.status})`);
+    throw new Error(data?.error || text || `On-demand ${action} failed (${res.status})`);
   }
   void mirrorOnDemand(action, body, data);
   return data;

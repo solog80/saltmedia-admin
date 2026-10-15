@@ -9,22 +9,38 @@ const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
  */
 
 async function proxy(path: string, init: RequestInit = {}) {
-  const res = await fetch(`${API_BASE}/${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-      ...init.headers,
-    },
-    cache: 'no-store',
-  });
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) {
-    return NextResponse.json(data || { error: `On-demand ${res.status}` }, { status: res.status });
+  try {
+    const res = await fetch(`${API_BASE}/${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+        ...init.headers,
+      },
+      cache: 'no-store',
+    });
+    const text = await res.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    if (!res.ok) {
+      return NextResponse.json(
+        data || { error: text || `On-demand ${res.status}` },
+        { status: res.status }
+      );
+    }
+    return NextResponse.json(data);
+  } catch (err: any) {
+    console.error(`[api/ondemand] Proxy error for ${path}:`, err);
+    return NextResponse.json(
+      { error: `On-demand proxy error: ${err?.message || err}` },
+      { status: 500 }
+    );
   }
-  return NextResponse.json(data);
 }
 
 export async function GET(request: NextRequest) {
@@ -32,12 +48,16 @@ export async function GET(request: NextRequest) {
   const mode = searchParams.get('mode');
   const showId = searchParams.get('showId') || '';
   const seasonId = searchParams.get('seasonId') || '';
+  const refresh = searchParams.get('refresh') === '1';
 
   if (mode === 'show') {
     return proxy('getOnDemandShowById', { method: 'POST', body: JSON.stringify({ showId }) });
   }
   if (mode === 'season') {
     return proxy('getOnDemandSeasonEpisodes', { method: 'POST', body: JSON.stringify({ showId, seasonId }) });
+  }
+  if (refresh) {
+    return proxy('refreshOnDemandCache', { method: 'POST', body: '{}' });
   }
   return proxy('getOnDemandData');
 }
