@@ -134,9 +134,20 @@ export default function TrafficLogsSection({
   const [page, setPage] = useState<number>(1);
   const pageSize = 25;
 
-  // CSV Upload & PDF Export state
+  // CSV / Folder Upload & PDF Export state
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const cancelUploadRef = useRef<boolean>(false);
   const [uploading, setUploading] = useState(false);
+  const [openUploadMenu, setOpenUploadMenu] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    processed: number;
+    total: number;
+    spotsInserted: number;
+    spotsFound: number;
+    failed: number;
+    currentFile: string;
+  } | null>(null);
   const [exportingPdfClient, setExportingPdfClient] = useState<string | null>(null);
   const [openExportMenu, setOpenExportMenu] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<{
@@ -663,58 +674,159 @@ export default function TrafficLogsSection({
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    // Filter only valid .csv files (ignoring hidden OS files like .DS_Store)
+    const csvFiles = Array.from(fileList)
+      .filter((f) => {
+        const baseName = f.name.split('/').pop() || f.name;
+        return (
+          !baseName.startsWith('.') &&
+          baseName.toLowerCase().endsWith('.csv')
+        );
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (csvFiles.length === 0) {
+      setUploadStatus({
+        type: 'error',
+        message: 'No .csv log files found in the selected folder or selection.',
+      });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (folderInputRef.current) folderInputRef.current.value = '';
+      return;
+    }
+
+    const CONCURRENCY_LIMIT = 3;
+    cancelUploadRef.current = false;
     setUploading(true);
     setUploadStatus(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/radio-traffic/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Upload failed');
+    setUploadProgress({
+      processed: 0,
+      total: csvFiles.length,
+      spotsInserted: 0,
+      spotsFound: 0,
+      failed: 0,
+      currentFile: csvFiles[0].name,
+    });
+
+    let processedCount = 0;
+    let totalSpotsFound = 0;
+    let totalSpotsInserted = 0;
+    let failedCount = 0;
+    let lastError = '';
+    let minFileDate: string | null = null;
+    let maxFileDate: string | null = null;
+
+    let nextIndex = 0;
+
+    const uploadWorker = async () => {
+      while (nextIndex < csvFiles.length && !cancelUploadRef.current) {
+        const currentIndex = nextIndex++;
+        const file = csvFiles[currentIndex];
+        if (!file) break;
+
+        // Track date from SLog-YYMMDD.csv
+        const match = file.name.match(/SLog-(\d{2})(\d{2})(\d{2})/i);
+        if (match) {
+          const fDate = `20${match[1]}-${match[2]}-${match[3]}`;
+          if (!minFileDate || fDate < minFileDate) minFileDate = fDate;
+          if (!maxFileDate || fDate > maxFileDate) maxFileDate = fDate;
+        }
+
+        try {
+          const formData = new FormData();
+          formData.append('file', file, file.name);
+          const res = await fetch('/api/radio-traffic/upload', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || `HTTP ${res.status}`);
+          }
+
+          const spotsFound = Number(data.parsed ?? data.total_rows_parsed ?? 0);
+          const spotsInserted = Number(data.inserted ?? data.spots_inserted ?? 0);
+          totalSpotsFound += spotsFound;
+          totalSpotsInserted += spotsInserted;
+        } catch (err: any) {
+          failedCount += 1;
+          lastError = err?.message || 'Upload failed';
+        } finally {
+          processedCount += 1;
+          setUploadProgress({
+            processed: processedCount,
+            total: csvFiles.length,
+            spotsInserted: totalSpotsInserted,
+            spotsFound: totalSpotsFound,
+            failed: failedCount,
+            currentFile: file.name,
+          });
+        }
       }
+    };
 
-      const spotsFound = data.parsed ?? data.total_rows_parsed ?? 0;
-      const spotsInserted = data.inserted ?? data.spots_inserted ?? 0;
+    try {
+      const workerCount = Math.min(CONCURRENCY_LIMIT, csvFiles.length);
+      await Promise.all(
+        Array.from({ length: workerCount }, () => uploadWorker())
+      );
 
-      // If filename matches SLog-YYMMDD.csv, extract 20YY-MM-DD and ensure date range covers it
-      const match = file.name.match(/SLog-(\d{2})(\d{2})(\d{2})/i);
+      // Expand dashboard date filter if uploaded SLog-YYMMDD dates fall outside current range
       let dateAdjustedNote = '';
-      if (match) {
-        const fileDate = `20${match[1]}-${match[2]}-${match[3]}`;
-        if (fileDate < startDate || fileDate > endDate) {
-          const newStart = fileDate < startDate ? fileDate : startDate;
-          const newEnd = fileDate > endDate ? fileDate : endDate;
+      if (minFileDate && maxFileDate) {
+        const newStart = minFileDate < startDate ? minFileDate : startDate;
+        const newEnd = maxFileDate > endDate ? maxFileDate : endDate;
+        if (newStart !== startDate || newEnd !== endDate) {
           setStartDate(newStart);
           setEndDate(newEnd);
-          dateAdjustedNote = ` Date filter updated to include ${fileDate}.`;
+          dateAdjustedNote = ` Date filter updated (${newStart} to ${newEnd}).`;
         }
       }
 
-      setUploadStatus({
-        type: 'success',
-        message:
-          spotsInserted === 0 && spotsFound > 0
-            ? `Synced ${file.name}: ${spotsFound} commercial spots verified (already in database).${dateAdjustedNote}`
-            : `Synced ${file.name}: ${spotsInserted} commercial spots ingested (${spotsFound} commercial spots found).${dateAdjustedNote}`,
-      });
+      const wasCancelled = cancelUploadRef.current;
+
+      if (processedCount === failedCount && failedCount > 0) {
+        setUploadStatus({
+          type: 'error',
+          message: `Upload failed for ${failedCount} file(s): ${lastError}`,
+        });
+      } else if (csvFiles.length === 1) {
+        const singleName = csvFiles[0].name;
+        setUploadStatus({
+          type: 'success',
+          message:
+            totalSpotsInserted === 0 && totalSpotsFound > 0
+              ? `Synced ${singleName}: ${totalSpotsFound.toLocaleString()} commercial spots verified (already in database).${dateAdjustedNote}`
+              : `Synced ${singleName}: ${totalSpotsInserted.toLocaleString()} commercial spots ingested (${totalSpotsFound.toLocaleString()} commercial spots found).${dateAdjustedNote}`,
+        });
+      } else {
+        const failNote =
+          failedCount > 0 ? ` (${failedCount} file(s) failed)` : '';
+        const cancelNote = wasCancelled ? ' (Stopped early by user)' : '';
+        setUploadStatus({
+          type: 'success',
+          message:
+            totalSpotsInserted === 0 && totalSpotsFound > 0
+              ? `Bulk sync complete${cancelNote}: ${processedCount.toLocaleString()} / ${csvFiles.length.toLocaleString()} CSV files scanned • ${totalSpotsFound.toLocaleString()} commercial spots verified (already in database)${failNote}.${dateAdjustedNote}`
+              : `Bulk sync complete${cancelNote}: ${processedCount.toLocaleString()} / ${csvFiles.length.toLocaleString()} CSV files synced • ${totalSpotsInserted.toLocaleString()} new commercial spots ingested (${totalSpotsFound.toLocaleString()} total found)${failNote}.${dateAdjustedNote}`,
+        });
+      }
+
       refetchAdvertisers();
       refetchAffidavit();
     } catch (err: any) {
       setUploadStatus({
         type: 'error',
-        message: err?.message || 'Failed to upload SLog CSV file',
+        message: err?.message || 'Failed to upload SLog CSV files',
       });
     } finally {
       setUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      setUploadProgress(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (folderInputRef.current) folderInputRef.current.value = '';
     }
   };
 
@@ -754,23 +866,87 @@ export default function TrafficLogsSection({
             onChange={handleRangeChange}
           />
 
+          {/* Hidden File & Folder Inputs */}
           <input
             ref={fileInputRef}
             type="file"
             accept=".csv,.txt"
+            multiple
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            {...({ webkitdirectory: '', directory: '' } as any)}
+            multiple
             onChange={handleFileUpload}
             className="hidden"
           />
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white/90 text-xs sm:text-sm font-medium transition disabled:opacity-50"
-            title="Manually upload a StationPlaylist SLog-YYMMDD.csv file"
-          >
-            <Upload size={14} />
-            <span>{uploading ? 'Uploading...' : 'Upload SLog CSV'}</span>
-          </button>
+          {/* Upload Logs Dropdown (Files or Folder Backfill) */}
+          <div className="relative">
+            <button
+              onClick={() => setOpenUploadMenu((prev) => !prev)}
+              disabled={uploading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white/90 text-xs sm:text-sm font-medium transition disabled:opacity-50"
+              title="Upload StationPlaylist SLog CSV files or an entire folder for backfill"
+            >
+              <Upload size={14} />
+              <span>
+                {uploading && uploadProgress
+                  ? `Syncing ${uploadProgress.processed}/${uploadProgress.total}...`
+                  : 'Upload Logs'}
+              </span>
+              <ChevronDown
+                size={13}
+                className={`transition-transform ${
+                  openUploadMenu ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {openUploadMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-[90]"
+                  onClick={() => setOpenUploadMenu(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 z-[100] w-56 bg-[#1c1917]/95 backdrop-blur-xl rounded-xl p-1.5 shadow-2xl border border-white/25">
+                  <button
+                    onClick={() => {
+                      setOpenUploadMenu(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-white hover:bg-white/15 transition text-left"
+                  >
+                    <FileText size={14} className="text-blue-400 shrink-0" />
+                    <div>
+                      <div className="font-semibold">Select CSV File(s)</div>
+                      <div className="text-[10px] text-white/65">
+                        One or multiple SLog-*.csv files
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setOpenUploadMenu(false);
+                      folderInputRef.current?.click();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-white hover:bg-white/15 transition text-left mt-0.5"
+                  >
+                    <FolderOpen size={14} className="text-amber-400 shrink-0" />
+                    <div>
+                      <div className="font-semibold">Open Folder (Backfill)</div>
+                      <div className="text-[10px] text-white/65">
+                        Scans &amp; syncs all CSVs in folder
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Header Export Dropdown (CSV / PDF) */}
           <div className="relative">
@@ -855,6 +1031,59 @@ export default function TrafficLogsSection({
           </button>
         </div>
       </div>
+
+      {/* Live Bulk / Folder Upload Progress Banner */}
+      {uploading && uploadProgress && (
+        <div className="relative z-10 frosted-glass rounded-xl p-4 border border-blue-500/40 bg-blue-950/40 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+            <div className="flex items-center gap-2 text-white font-semibold">
+              <RefreshCw size={15} className="animate-spin text-blue-400" />
+              <span>
+                Syncing {uploadProgress.processed.toLocaleString()} of{' '}
+                {uploadProgress.total.toLocaleString()} CSV files (
+                {Math.round(
+                  (uploadProgress.processed / Math.max(1, uploadProgress.total)) *
+                    100
+                )}
+                %)
+              </span>
+              <span className="text-white/65 font-normal font-mono text-xs">
+                • {uploadProgress.currentFile}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-emerald-300 font-medium">
+                {uploadProgress.spotsInserted.toLocaleString()} new spots ingested ({uploadProgress.spotsFound.toLocaleString()} scanned)
+              </span>
+              {uploadProgress.total > 1 && (
+                <button
+                  onClick={() => {
+                    cancelUploadRef.current = true;
+                  }}
+                  className="px-2.5 py-1 rounded-md bg-red-500/25 hover:bg-red-500/40 border border-red-400/40 text-red-200 text-xs font-semibold transition"
+                >
+                  Stop
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-200"
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.round(
+                    (uploadProgress.processed /
+                      Math.max(1, uploadProgress.total)) *
+                      100
+                  )
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Upload status banner */}
       {uploadStatus && (
