@@ -7,7 +7,7 @@ import Home01Icon from '@hugeicons/core-free-icons/dist/esm/Home01Icon';
 import UserGroupIcon from '@hugeicons/core-free-icons/dist/esm/UserGroupIcon';
 import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon';
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
-import { Calendar, Zap, DollarSign, Radio, BarChart3, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import LogoutButton from './LogoutButton';
 
 const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean; onClose?: () => void }) => {
@@ -96,6 +96,10 @@ const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean
             <SidebarLink href="/radio/reports" collapsed={collapsed} sub tooltip="Reports" onClick={handleNavClick}>
               <BarChart3 size={14} />
               <span className={collapsed ? 'hidden' : ''}>Reports</span>
+            </SidebarLink>
+            <SidebarLink href="/radio/logs" collapsed={collapsed} sub tooltip="Traffic Logs" onClick={handleNavClick}>
+              <FileText size={14} />
+              <span className={collapsed ? 'hidden' : ''}>Logs</span>
             </SidebarLink>
             <SidebarLink href="/epg" collapsed={collapsed} tooltip="EPG" onClick={handleNavClick}>
               <Calendar size={20} />

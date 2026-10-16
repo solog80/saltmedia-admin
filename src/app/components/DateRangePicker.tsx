@@ -53,15 +53,15 @@ export default function DateRangePicker({ startDate, endDate, onChange }: DateRa
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition-all"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white/10 border border-white/20 text-white/90 hover:text-white hover:bg-white/20 transition-all"
       >
         <Calendar size={14} />
-        {label}
-        <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span>{label}</span>
+        <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 frosted-glass border border-white/20 rounded-xl p-4 shadow-2xl">
+        <div className="absolute right-0 top-full mt-2 z-[100] w-72 bg-[#1c1917]/95 backdrop-blur-xl border border-white/25 rounded-xl p-4 shadow-2xl">
           <div className="flex gap-1.5 mb-3">
             {PRESETS.map(p => (
               <button
@@ -71,10 +71,10 @@ export default function DateRangePicker({ startDate, endDate, onChange }: DateRa
                   onChange(r.start, r.end);
                   setOpen(false);
                 }}
-                className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   activePreset?.label === p.label
-                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
-                    : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                    : 'bg-white/10 text-white/80 hover:text-white hover:bg-white/20'
                 }`}
               >
                 {p.label}
@@ -82,25 +82,25 @@ export default function DateRangePicker({ startDate, endDate, onChange }: DateRa
             ))}
           </div>
 
-          <div className="border-t border-white/10 pt-3 space-y-2">
-            <label className="text-xs text-white/50 block">Custom range</label>
+          <div className="border-t border-white/15 pt-3 space-y-2">
+            <label className="text-xs font-medium text-white/75 block">Custom range</label>
             <div className="flex gap-2">
               <div className="flex-1">
-                <span className="text-[10px] text-white/40 block mb-1">From</span>
+                <span className="text-[10px] text-white/60 block mb-1">From</span>
                 <input
                   type="date"
                   value={startDate}
                   onChange={e => onChange(e.target.value, endDate)}
-                  className="w-full px-2 py-1.5 rounded-md text-xs bg-white/5 border border-white/10 text-white [color-scheme:dark] focus:outline-none focus:border-blue-500/50"
+                  className="w-full px-2 py-1.5 rounded-md text-xs bg-white/10 border border-white/20 text-white [color-scheme:dark] focus:outline-none focus:border-blue-500"
                 />
               </div>
               <div className="flex-1">
-                <span className="text-[10px] text-white/40 block mb-1">To</span>
+                <span className="text-[10px] text-white/60 block mb-1">To</span>
                 <input
                   type="date"
                   value={endDate}
                   onChange={e => onChange(startDate, e.target.value)}
-                  className="w-full px-2 py-1.5 rounded-md text-xs bg-white/5 border border-white/10 text-white [color-scheme:dark] focus:outline-none focus:border-blue-500/50"
+                  className="w-full px-2 py-1.5 rounded-md text-xs bg-white/10 border border-white/20 text-white [color-scheme:dark] focus:outline-none focus:border-blue-500"
                 />
               </div>
             </div>

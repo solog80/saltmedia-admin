@@ -30,6 +30,8 @@
     "firebase": "^12.3.0",
     "firebase-admin": "^13.5.0",
     "hls.js": "^1.6.16",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "lucide-react": "^1.0.0",
     "next": "^15.5.19",
     "react": "^19.1.0",
