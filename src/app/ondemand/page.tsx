@@ -729,10 +729,10 @@ function OndemandContent() {
               description: meta.description,
               server: 'bunny',
             };
-            if (meta.seasonTitle) {
-              episodePayload.seasonTitle = meta.seasonTitle;
-            } else if (meta.seasonId) {
+            if (meta.seasonId) {
               episodePayload.seasonId = meta.seasonId;
+            } else if (meta.seasonTitle) {
+              episodePayload.seasonTitle = meta.seasonTitle;
             }
 
             await ondemandProxy('createEpisodeFromBunnyUpload', episodePayload);
@@ -856,8 +856,8 @@ function OndemandContent() {
             published: false,
             processing: true,
           };
-          if (meta.seasonTitle) payload.seasonTitle = meta.seasonTitle;
-          else if (meta.seasonId) payload.seasonId = meta.seasonId;
+          if (meta.seasonId) payload.seasonId = meta.seasonId;
+          else if (meta.seasonTitle) payload.seasonTitle = meta.seasonTitle;
 
           const res = await ondemandProxy('createSfxEpisode', payload);
           episodeRef = res.episode as { id: string; seasonId: string } | null;
@@ -982,8 +982,8 @@ function OndemandContent() {
         duration,
         thumbnail: video.thumbUrl || '',
       };
-      if (meta.seasonTitle) episodePayload.seasonTitle = meta.seasonTitle;
-      else if (meta.seasonId) episodePayload.seasonId = meta.seasonId;
+      if (meta.seasonId) episodePayload.seasonId = meta.seasonId;
+      else if (meta.seasonTitle) episodePayload.seasonTitle = meta.seasonTitle;
 
       await ondemandProxy('createSfxEpisode', episodePayload);
       updateJob(jobId, {
@@ -1015,8 +1015,8 @@ function OndemandContent() {
         description: meta.description,
         server: 'bunny',
       };
-      if (meta.seasonTitle) episodePayload.seasonTitle = meta.seasonTitle;
-      else if (meta.seasonId) episodePayload.seasonId = meta.seasonId;
+      if (meta.seasonId) episodePayload.seasonId = meta.seasonId;
+      else if (meta.seasonTitle) episodePayload.seasonTitle = meta.seasonTitle;
 
       await ondemandProxy('createEpisodeFromBunnyUpload', episodePayload);
       updateJob(jobId, {
