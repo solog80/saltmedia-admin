@@ -48,7 +48,13 @@ const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean
         style={{ borderColor: 'rgba(255, 255, 255, 0.2)' }}
       >
         {!collapsed && (
-          <span className="flex-1 text-xl font-bold tracking-tight text-white text-center">SaltMedia Admin</span>
+          <div className="flex-1 flex justify-center">
+            <img
+              src="/Salt_Media_App_Logo.png"
+              alt="SaltMedia Admin"
+              className="h-10 w-auto object-contain"
+            />
+          </div>
         )}
         <button
           onClick={toggle}
