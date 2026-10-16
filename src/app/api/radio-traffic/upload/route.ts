@@ -26,7 +26,16 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    const parsedCount = data.parsed ?? data.total_rows_parsed ?? 0;
+    const insertedCount = data.inserted ?? data.spots_inserted ?? 0;
+
+    return NextResponse.json({
+      ...data,
+      parsed: parsedCount,
+      inserted: insertedCount,
+      spots_inserted: insertedCount,
+      total_rows_parsed: parsedCount,
+    });
   } catch (error) {
     console.error('Radio traffic CSV upload error:', error);
     return NextResponse.json(

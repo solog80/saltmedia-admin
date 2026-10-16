@@ -678,9 +678,30 @@ export default function TrafficLogsSection({
       if (!res.ok) {
         throw new Error(data.error || 'Upload failed');
       }
+
+      const spotsFound = data.parsed ?? data.total_rows_parsed ?? 0;
+      const spotsInserted = data.inserted ?? data.spots_inserted ?? 0;
+
+      // If filename matches SLog-YYMMDD.csv, extract 20YY-MM-DD and ensure date range covers it
+      const match = file.name.match(/SLog-(\d{2})(\d{2})(\d{2})/i);
+      let dateAdjustedNote = '';
+      if (match) {
+        const fileDate = `20${match[1]}-${match[2]}-${match[3]}`;
+        if (fileDate < startDate || fileDate > endDate) {
+          const newStart = fileDate < startDate ? fileDate : startDate;
+          const newEnd = fileDate > endDate ? fileDate : endDate;
+          setStartDate(newStart);
+          setEndDate(newEnd);
+          dateAdjustedNote = ` Date filter updated to include ${fileDate}.`;
+        }
+      }
+
       setUploadStatus({
         type: 'success',
-        message: `Synced ${file.name}: ${data.spots_inserted ?? 0} commercial spots ingested (${data.total_rows_parsed ?? 0} rows scanned).`,
+        message:
+          spotsInserted === 0 && spotsFound > 0
+            ? `Synced ${file.name}: ${spotsFound} commercial spots verified (already in database).${dateAdjustedNote}`
+            : `Synced ${file.name}: ${spotsInserted} commercial spots ingested (${spotsFound} commercial spots found).${dateAdjustedNote}`,
       });
       refetchAdvertisers();
       refetchAffidavit();
