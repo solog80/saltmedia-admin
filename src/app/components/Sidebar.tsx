@@ -50,7 +50,7 @@ const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean
         {!collapsed && (
           <div className="flex-1 flex justify-center">
             <img
-              src="/Salt_Media_App_Logo.png"
+              src="/SALT-MEDIA-Logo.png"
               alt="SaltMedia Admin"
               className="h-10 w-auto object-contain"
             />
