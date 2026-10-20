@@ -7,7 +7,7 @@ import Home01Icon from '@hugeicons/core-free-icons/dist/esm/Home01Icon';
 import UserGroupIcon from '@hugeicons/core-free-icons/dist/esm/UserGroupIcon';
 import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon';
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
-import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen, Tv } from 'lucide-react';
 import LogoutButton from './LogoutButton';
 
 const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean; onClose?: () => void }) => {
@@ -104,6 +104,14 @@ const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean
               <span className={collapsed ? 'hidden' : ''}>Reports</span>
             </SidebarLink>
             <SidebarLink href="/radio/logs" collapsed={collapsed} sub tooltip="Traffic Logs" onClick={handleNavClick}>
+              <FileText size={14} />
+              <span className={collapsed ? 'hidden' : ''}>Logs</span>
+            </SidebarLink>
+            <SidebarLink href="/tv" collapsed={collapsed} tooltip="TV" onClick={handleNavClick}>
+              <Tv size={20} />
+              <span className={collapsed ? 'hidden' : ''}>TV</span>
+            </SidebarLink>
+            <SidebarLink href="/tv/logs" collapsed={collapsed} sub tooltip="TV Traffic Logs" onClick={handleNavClick}>
               <FileText size={14} />
               <span className={collapsed ? 'hidden' : ''}>Logs</span>
             </SidebarLink>

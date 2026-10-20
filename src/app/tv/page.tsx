@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus } from 'lucide-react';
+import { Plus, FileText } from 'lucide-react';
 import { VideoPlayer } from '../components/VideoPlayer';
 
 interface TVChannel {
@@ -73,9 +74,18 @@ export default function TVPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-white">TV Channels</h1>
-        <p className="mt-2 text-white/70">Manage and preview TV channels</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-white">TV Channels</h1>
+          <p className="mt-2 text-white/70">Manage and preview TV channels</p>
+        </div>
+        <Link
+          href="/tv/logs"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white shadow hover:bg-blue-700 transition-colors"
+        >
+          <FileText size={16} />
+          Traffic Logs &amp; Affidavits
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
