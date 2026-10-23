@@ -7,7 +7,7 @@ A full-featured administration dashboard for the SaltMedia streaming platform. M
 - **Framework:** Next.js 15 (App Router, Turbopack)
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS v4, shadcn/ui
-- **Backend:** Firebase (Firestore, Auth, Functions, RTDB)
+- **Backend:** Firebase (Firestore, Auth, Functions, RTDB) + Supabase Mesh via the Dart BFF
 - **State:** TanStack React Query v5, Zustand v5
 - **Charts:** Recharts
 - **Video:** HLS.js, tus-js-client (resumable uploads)
@@ -24,7 +24,7 @@ A full-featured administration dashboard for the SaltMedia streaming platform. M
 - **Events** — Platform event tracking
 - **Hero Banners** — Promotional banners with scheduling
 - **Monetization** — Payment tracking and metrics
-- **Broadcast** — Live stream health monitoring (SRT/RTMP)
+- **Broadcasts** — **Live TV** health/config monitor and **Live Radio** producer studio (presenter cards, mute/unmute, Studio leg, Google/S3 avatars)
 - **Ads** — Full ad campaign management (manual & VAST), frequency capping, analytics
 
 ## Getting Started
@@ -34,7 +34,14 @@ npm install
 npm run dev
 ```
 
-Set up a `.env.local` file with your Firebase configuration.
+Set up a `.env.local` file with your Firebase configuration plus the BFF/mesh
+keys documented in [BFF_INTEGRATION.md](./BFF_INTEGRATION.md).
+
+## BFF Integration
+
+Live Radio producer controls, broadcast configuration, custom avatars, and the
+mobile presenter directory are documented in
+[BFF_INTEGRATION.md](./BFF_INTEGRATION.md).
 
 ## Deployment
 
