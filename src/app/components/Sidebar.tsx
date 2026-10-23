@@ -7,7 +7,7 @@ import Home01Icon from '@hugeicons/core-free-icons/dist/esm/Home01Icon';
 import UserGroupIcon from '@hugeicons/core-free-icons/dist/esm/UserGroupIcon';
 import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon';
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
-import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen, Tv } from 'lucide-react';
+import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen, Tv, Mic } from 'lucide-react';
 import LogoutButton from './LogoutButton';
 
 const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean; onClose?: () => void }) => {
@@ -135,9 +135,17 @@ const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean
               <DollarSign size={20} />
               <span className={collapsed ? 'hidden' : ''}>Monetization</span>
             </SidebarLink>
-            <SidebarLink href="/broadcast" collapsed={collapsed} tooltip="Broadcast" onClick={handleNavClick}>
+            <SidebarLink href="/broadcast" collapsed={collapsed} tooltip="Broadcasts" onClick={handleNavClick}>
               <RadioTower size={20} />
-              <span className={collapsed ? 'hidden' : ''}>Broadcast</span>
+              <span className={collapsed ? 'hidden' : ''}>Broadcasts</span>
+            </SidebarLink>
+            <SidebarLink href="/broadcast" collapsed={collapsed} sub tooltip="Live TV" onClick={handleNavClick}>
+              <Tv size={14} />
+              <span className={collapsed ? 'hidden' : ''}>Live TV</span>
+            </SidebarLink>
+            <SidebarLink href="/broadcast/radio" collapsed={collapsed} sub tooltip="Live Radio" onClick={handleNavClick}>
+              <Mic size={14} />
+              <span className={collapsed ? 'hidden' : ''}>Live Radio</span>
             </SidebarLink>
             <SidebarLink href="/ads" collapsed={collapsed} tooltip="Ads" onClick={handleNavClick}>
               <Play size={20} />
