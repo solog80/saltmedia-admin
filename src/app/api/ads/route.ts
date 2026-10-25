@@ -66,6 +66,16 @@ function toRow(payload: Record<string, any>): Record<string, any> {
       row[col] = value;
     }
   }
+  if (
+    Array.isArray(row.placement_type) &&
+    row.placement_type.includes('mid-roll')
+  ) {
+    // Older rows / clients sometimes omitted the trigger type while the form
+    // displayed the "percentage" fallback. Persist the real value so the app
+    // does not treat a missing type as trigger-at-0.
+    row.mid_roll_trigger_type = row.mid_roll_trigger_type || 'percentage';
+    if (row.mid_roll_trigger_value == null) row.mid_roll_trigger_value = 50;
+  }
   return row;
 }
 

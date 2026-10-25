@@ -60,9 +60,18 @@ const STATUSES = ["active", "inactive", "pending"]
 const CONTENT_TYPES = ["liveTV", "ondemand", "all"]
 const USER_SEGMENTS = ["all", "free", "premium"]
 
+function withMidRollDefaults(value: Ad): Ad {
+  if (!value.placementType?.includes("mid-roll")) return value
+  return {
+    ...value,
+    midRollTriggerType: value.midRollTriggerType || "percentage",
+    midRollTriggerValue: value.midRollTriggerValue ?? 50,
+  }
+}
+
 export function AdForm({ ad, onSuccess }: AdFormProps) {
   const [formData, setFormData] = useState<Ad>(
-    ad || {
+    ad ? withMidRollDefaults(ad) : {
       adName: "",
       adType: "manual",
       status: "pending",
@@ -139,17 +148,23 @@ export function AdForm({ ad, onSuccess }: AdFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (validateForm()) {
-      createAdMutation.mutate(formData)
+      createAdMutation.mutate(withMidRollDefaults(formData))
     }
   }
 
   const togglePlacement = (placement: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      placementType: prev.placementType.includes(placement)
-        ? prev.placementType.filter((p) => p !== placement)
-        : [...prev.placementType, placement],
-    }))
+    setFormData((prev) => {
+      const adding = !prev.placementType.includes(placement)
+      const next = {
+        ...prev,
+        placementType: adding
+          ? [...prev.placementType, placement]
+          : prev.placementType.filter((p) => p !== placement),
+      }
+      return adding && placement === "mid-roll"
+        ? withMidRollDefaults(next)
+        : next
+    })
   }
 
   const toggleContentType = (contentType: string) => {
