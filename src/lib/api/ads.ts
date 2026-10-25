@@ -2,6 +2,14 @@
 // BigQuery). All data access is proxied through server-side Next.js routes so
 // the service-role key never reaches the browser.
 
+export interface LiveAdSettings {
+  liveAdsEnabled: boolean
+  liveIntervalMinutes: number
+  liveMaxPerSession: number
+  liveSkipAfterSeconds: number
+  liveSkipMinDurationSeconds: number
+}
+
 interface Ad {
   id?: string
   adName: string
@@ -164,6 +172,20 @@ export const adsApi = {
     } catch (error) {
       console.error("Failed to refresh ad cache:", error)
     }
+  },
+
+  async getLiveAdSettings(): Promise<LiveAdSettings> {
+    return request<LiveAdSettings>("/api/ads/settings")
+  },
+
+  async updateLiveAdSettings(
+    settings: LiveAdSettings
+  ): Promise<LiveAdSettings> {
+    return request<LiveAdSettings>("/api/ads/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
+    })
   },
 
   // Get a single ad by ID

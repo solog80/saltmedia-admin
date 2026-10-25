@@ -49,6 +49,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 import { AdForm } from "@/app/components/ads/AdForm"
+import { LiveAdSettingsCard } from "@/app/components/ads/LiveAdSettingsCard"
 import { AdAnalyticsDashboard } from "@/app/components/ads/AdAnalyticsDashboard"
 import { AdPreviewModal } from "@/app/components/ads/AdPreviewModal"
 import { adsApi } from "@/lib/api/ads"
@@ -248,6 +249,8 @@ export default function AdsPage() {
         </Button>
       </div>
 
+      {activeTab === "ads" && <LiveAdSettingsCard />}
+
       {/* Key Metrics - Only for ads management */}
       {activeTab === "ads" && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -302,7 +305,7 @@ export default function AdsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Status</Label>
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <Select value={filterStatus} onValueChange={(value) => value && setFilterStatus(value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Status" />
                     </SelectTrigger>
@@ -316,7 +319,7 @@ export default function AdsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Type</Label>
-                  <Select value={filterType} onValueChange={setFilterType}>
+                  <Select value={filterType} onValueChange={(value) => value && setFilterType(value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Types" />
                     </SelectTrigger>
@@ -329,7 +332,7 @@ export default function AdsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Placement</Label>
-                  <Select value={filterPlacement} onValueChange={setFilterPlacement}>
+                  <Select value={filterPlacement} onValueChange={(value) => value && setFilterPlacement(value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Placements" />
                     </SelectTrigger>
@@ -337,6 +340,7 @@ export default function AdsPage() {
                       <SelectItem value="all">All Placements</SelectItem>
                       <SelectItem value="pre-roll">Pre-roll</SelectItem>
                       <SelectItem value="mid-roll">Mid-roll</SelectItem>
+                      <SelectItem value="live">Live</SelectItem>
                       <SelectItem value="banner">Banner</SelectItem>
                     </SelectContent>
                   </Select>

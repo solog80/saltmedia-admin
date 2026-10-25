@@ -54,7 +54,7 @@ interface AdFormProps {
   onSuccess: () => void | Promise<void>
 }
 
-const PLACEMENTS = ["pre-roll", "mid-roll", "banner"]
+const PLACEMENTS = ["pre-roll", "mid-roll", "live", "banner"]
 const AD_TYPES = ["manual", "vast"]
 const STATUSES = ["active", "inactive", "pending"]
 const CONTENT_TYPES = ["liveTV", "ondemand", "all"]
@@ -255,13 +255,14 @@ export function AdForm({ ad, onSuccess }: AdFormProps) {
                   <Label htmlFor="midRollTriggerType">Trigger Type *</Label>
                   <Select
                     value={formData.midRollTriggerType || "percentage"}
-                    onValueChange={(value: "percentage" | "timestamp") =>
+                    onValueChange={(value: "percentage" | "timestamp" | null) => {
+                      if (!value) return
                       setFormData({
                         ...formData,
                         midRollTriggerType: value,
                         midRollTriggerValue: value === "percentage" ? 50 : 30,
                       })
-                    }
+                    }}
                   >
                     <SelectTrigger id="midRollTriggerType">
                       <SelectValue />
