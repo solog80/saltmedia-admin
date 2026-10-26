@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { purgeEpgCache } from '@/lib/newsCache';
 
 const API_BASE = process.env.API_BASE_URL || '';
 const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
@@ -23,6 +24,9 @@ async function proxy(path: string, init: RequestInit = {}) {
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     return NextResponse.json(data || { error: `EPG ${res.status}` }, { status: res.status });
+  }
+  if (init.method && init.method !== 'GET') {
+    await purgeEpgCache();
   }
   return NextResponse.json(data);
 }
