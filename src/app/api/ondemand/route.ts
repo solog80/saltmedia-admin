@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { purgeOnDemandCache } from '@/lib/newsCache';
 
 const API_BASE = process.env.API_BASE_URL || '';
 const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
@@ -8,7 +9,12 @@ const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
  * writes (create/update/delete) use the server-side service-role key.
  */
 
-async function proxy(path: string, init: RequestInit = {}) {
+
+async function proxy(
+  path: string,
+  init: RequestInit = {},
+  purgeOnSuccess = false,
+) {
   try {
     const res = await fetch(`${API_BASE}/${path}`, {
       ...init,
@@ -32,6 +38,9 @@ async function proxy(path: string, init: RequestInit = {}) {
         data || { error: text || `On-demand ${res.status}` },
         { status: res.status }
       );
+    }
+    if (purgeOnSuccess) {
+      await purgeOnDemandCache();
     }
     return NextResponse.json(data);
   } catch (err: any) {
@@ -57,7 +66,7 @@ export async function GET(request: NextRequest) {
     return proxy('getOnDemandSeasonEpisodes', { method: 'POST', body: JSON.stringify({ showId, seasonId }) });
   }
   if (refresh) {
-    return proxy('refreshOnDemandCache', { method: 'POST', body: '{}' });
+    return proxy('refreshOnDemandCache', { method: 'POST', body: '{}' }, true);
   }
   return proxy('getOnDemandData');
 }
@@ -69,29 +78,29 @@ export async function POST(request: NextRequest) {
 
   switch (action) {
     case 'createShow':
-      return proxy('createOnDemandShow', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('createOnDemandShow', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'updateShow':
-      return proxy('updateOnDemandShow', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('updateOnDemandShow', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'deleteShow':
-      return proxy('deleteOnDemandShow', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('deleteOnDemandShow', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'createSeason':
-      return proxy('createOnDemandSeason', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('createOnDemandSeason', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'updateSeason':
-      return proxy('updateOnDemandSeason', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('updateOnDemandSeason', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'deleteSeason':
-      return proxy('deleteOnDemandSeason', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('deleteOnDemandSeason', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'updateEpisode':
-      return proxy('updateOnDemandEpisode', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('updateOnDemandEpisode', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'deleteEpisode':
-      return proxy('deleteOnDemandEpisode', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('deleteOnDemandEpisode', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'createSfxEpisode':
-      return proxy('createSfxEpisode', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('createSfxEpisode', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'createEpisodeFromBunnyUpload':
-      return proxy('createEpisodeFromBunnyUpload', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('createEpisodeFromBunnyUpload', { method: 'POST', body: JSON.stringify(body) }, true);
     case 'getPlaybackUrl':
       return proxy('getEpisodePlaybackUrl', { method: 'POST', body: JSON.stringify(body) });
     case 'uploadPoster':
-      return proxy('uploadShowPoster', { method: 'POST', body: JSON.stringify(body) });
+      return proxy('uploadShowPoster', { method: 'POST', body: JSON.stringify(body) }, true);
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   }
