@@ -98,22 +98,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ messages: JSON.parse(raw) });
     }
 
-    // Lineup: active special events + active chat_rooms + today's radio shows.
+    // Lineup: active radio special events + active radio chat_rooms + today's radio shows.
     const nowIso = new Date().toISOString();
-    let activeEvents: { id: string; title: string; image_url?: string }[] = [];
+    let activeEvents: {
+      id: string;
+      title: string;
+      image_url?: string;
+      platform?: string | null;
+    }[] = [];
     try {
       const eventsRaw = await restFetch(
-        `events?select=id,title,image_url,start_date,end_date,enable_chat&or=(enable_chat.is.null,enable_chat.eq.true)&start_date=lte.${encodeURIComponent(nowIso)}&end_date=gte.${encodeURIComponent(nowIso)}`
+        `events?select=id,title,image_url,start_date,end_date,enable_chat,platform&or=(enable_chat.is.null,enable_chat.eq.true)&start_date=lte.${encodeURIComponent(nowIso)}&end_date=gte.${encodeURIComponent(nowIso)}`
       );
-      activeEvents = JSON.parse(eventsRaw);
+      activeEvents = (JSON.parse(eventsRaw) as typeof activeEvents).filter(
+        (ev) => !ev.platform || ev.platform === 'radio' || ev.platform === 'both'
+      );
     } catch (e) {
       console.warn('Failed to fetch active events for chat route:', e);
     }
 
     const roomsRaw = await restFetch(
-      `chat_rooms?select=id,program_name,is_active&is_active=eq.true`
+      `chat_rooms?select=id,program_name,is_active,kind&is_active=eq.true`
     );
-    const activeRooms = JSON.parse(roomsRaw) as { id: string; program_name?: string }[];
+    const allActiveRooms = JSON.parse(roomsRaw) as {
+      id: string;
+      program_name?: string;
+      kind?: string;
+    }[];
+    // This page is radio-only. TV rooms (e.g. the per-station Sunday Service
+    // rooms) were being listed here and showed up as duplicate programs.
+    const activeRooms = allActiveRooms.filter((r) => r.kind === 'radio');
 
     const lineup = await getTodayLineup();
 
@@ -126,51 +140,49 @@ export async function GET(request: NextRequest) {
       isActive: boolean;
     }[] = [];
 
-    // 1. Add active special events
+    const showKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+    const hasShow = (programName: string, roomId: string) =>
+      shows.some(
+        (s) => s.roomId === roomId || showKey(s.programName) === showKey(programName)
+      );
+
+    // 1. Add active radio special events (one entry per event, not id + slug).
     for (const ev of activeEvents) {
+      const slug = roomSlug(ev.title);
+      const roomId =
+        [ev.id, slug].find((id) => allActiveRooms.some((r) => r.id === id)) ?? ev.id;
+      if (hasShow(ev.title, roomId)) continue;
       shows.push({
         programName: ev.title,
-        roomId: ev.id,
+        roomId,
         startTime: '00:00',
         endTime: '23:59',
         image: ev.image_url || null,
         isActive: true,
       });
-      const slug = roomSlug(ev.title);
-      if (slug && slug !== ev.id && !shows.some((s) => s.roomId === slug)) {
-        shows.push({
-          programName: ev.title,
-          roomId: slug,
-          startTime: '00:00',
-          endTime: '23:59',
-          image: ev.image_url || null,
-          isActive: true,
-        });
-      }
     }
 
-    // 2. Add active rooms from chat_rooms table
+    // 2. Add active radio rooms from chat_rooms table.
     for (const room of activeRooms) {
-      if (!shows.some((s) => s.roomId === room.id)) {
-        shows.push({
-          programName: room.program_name || room.id,
-          roomId: room.id,
-          startTime: '00:00',
-          endTime: '23:59',
-          image: null,
-          isActive: true,
-        });
-      }
+      const programName = room.program_name || room.id;
+      if (hasShow(programName, room.id)) continue;
+      shows.push({
+        programName,
+        roomId: room.id,
+        startTime: '00:00',
+        endTime: '23:59',
+        image: null,
+        isActive: true,
+      });
     }
 
-    // 3. Add regular radio lineup
+    // 3. Add regular radio lineup.
     for (const s of lineup) {
-      if (!shows.some((existing) => existing.roomId === s.roomId)) {
-        shows.push({
-          ...s,
-          isActive: activeRooms.some((r) => r.id === s.roomId),
-        });
-      }
+      if (hasShow(s.programName, s.roomId)) continue;
+      shows.push({
+        ...s,
+        isActive: activeRooms.some((r) => r.id === s.roomId),
+      });
     }
 
     // Prefer the first active show; fall back to the earliest today.
