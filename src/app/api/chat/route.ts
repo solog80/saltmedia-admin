@@ -162,16 +162,21 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. Add active radio rooms from chat_rooms table.
+    // 2. Add active radio rooms from chat_rooms table. Reuse the lineup entry
+    // (image/times) because chat_rooms has no poster column.
+    const lineupByRoom = new Map(lineup.map((s) => [s.roomId, s]));
     for (const room of activeRooms) {
       const programName = room.program_name || room.id;
       if (hasShow(programName, room.id)) continue;
+      const meta =
+        lineupByRoom.get(room.id) ??
+        lineup.find((s) => showKey(s.programName) === showKey(programName));
       shows.push({
         programName,
         roomId: room.id,
-        startTime: '00:00',
-        endTime: '23:59',
-        image: null,
+        startTime: meta?.startTime ?? '00:00',
+        endTime: meta?.endTime ?? '23:59',
+        image: meta?.image ?? null,
         isActive: true,
       });
     }
