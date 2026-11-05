@@ -645,12 +645,37 @@ function OndemandContent() {
     }
   ) => {
     try {
+      let resolvedBunnyCollectionId = meta.bunnyCollectionId || '';
+      if (!resolvedBunnyCollectionId && meta.showTitle) {
+        updateJob(jobId, { status: 'initiating', statusText: 'Ensuring Bunny collection exists...' });
+        try {
+          const colRes = await fetch('/api/bunny/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: meta.showTitle }),
+          });
+          if (colRes.ok) {
+            const colData = await colRes.json();
+            if (colData?.guid) {
+              resolvedBunnyCollectionId = colData.guid;
+              await ondemandProxy('updateShow', {
+                showId: meta.showId,
+                updates: { bunnyGuid: resolvedBunnyCollectionId },
+              });
+              queryClient.invalidateQueries({ queryKey: ['onDemandData'] });
+            }
+          }
+        } catch (colErr) {
+          console.warn('Could not auto-create Bunny collection before upload:', colErr);
+        }
+      }
+
       updateJob(jobId, { status: 'initiating', statusText: 'Requesting Bunny upload signature...' });
       const createTusUploadCallable = httpsCallable(functions, 'createTusUpload');
       const resp = (await createTusUploadCallable({
         title: meta.title,
         collectionId: meta.showId,
-        bunnyCollectionId: meta.bunnyCollectionId || '',
+        bunnyCollectionId: resolvedBunnyCollectionId,
       })) as any;
 
       const tusVideoId: string = resp.data.videoId;
@@ -690,7 +715,7 @@ function OndemandContent() {
           filename: file.name,
           filetype: file.type,
           title: meta.title,
-          collection: meta.bunnyCollectionId || '',
+          collection: resolvedBunnyCollectionId,
         },
         onError: function (error) {
           console.error(`Bunny upload error for job ${jobId}:`, error);
@@ -1181,8 +1206,29 @@ function OndemandContent() {
       return;
     }
     try {
-      const res = await ondemandProxy('createShow', { title: newShowTitle.trim() });
+      const trimmedTitle = newShowTitle.trim();
+      const res = await ondemandProxy('createShow', { title: trimmedTitle });
       const show = res.show;
+      if (show?.id && !show.bunnyGuid) {
+        try {
+          const colRes = await fetch('/api/bunny/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: trimmedTitle }),
+          });
+          if (colRes.ok) {
+            const colData = await colRes.json();
+            if (colData?.guid) {
+              await ondemandProxy('updateShow', {
+                showId: show.id,
+                updates: { bunnyGuid: colData.guid },
+              });
+            }
+          }
+        } catch (colErr) {
+          console.warn('Fallback Bunny collection creation skipped:', colErr);
+        }
+      }
       setSelectedCollectionId(show.id);
       setNewShowMode(false);
       setNewShowTitle('');

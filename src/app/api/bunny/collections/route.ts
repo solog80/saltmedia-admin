@@ -47,3 +47,71 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const name = (body?.name || "").trim()
+    if (!name) {
+      return NextResponse.json({ error: "Collection name is required" }, { status: 400 })
+    }
+
+    if (!BUNNY_LIBRARY_ID || !BUNNY_ACCESS_KEY) {
+      return NextResponse.json(
+        { error: "Bunny API credentials not configured" },
+        { status: 500 }
+      )
+    }
+
+    // Reuse an existing collection with the same name (case-insensitive)
+    const listRes = await fetch(
+      `${BUNNY_BASE_URL}/library/${BUNNY_LIBRARY_ID}/collections?page=1&itemsPerPage=1000`,
+      {
+        headers: {
+          AccessKey: BUNNY_ACCESS_KEY,
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      }
+    )
+    if (listRes.ok) {
+      const listData = await listRes.json()
+      const existing = (listData.items || []).find(
+        (c: any) => (c.name || "").trim().toLowerCase() === name.toLowerCase() && c.guid
+      )
+      if (existing) {
+        return NextResponse.json({ guid: existing.guid, name: existing.name, reused: true })
+      }
+    }
+
+    const createRes = await fetch(
+      `${BUNNY_BASE_URL}/library/${BUNNY_LIBRARY_ID}/collections`,
+      {
+        method: "POST",
+        headers: {
+          AccessKey: BUNNY_ACCESS_KEY,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ name }),
+      }
+    )
+
+    if (!createRes.ok) {
+      const errorText = await createRes.text()
+      return NextResponse.json(
+        { error: `Bunny API error: ${createRes.status} ${errorText}` },
+        { status: createRes.status }
+      )
+    }
+
+    const created = await createRes.json()
+    return NextResponse.json({ guid: created.guid, name: created.name || name, reused: false })
+  } catch (error) {
+    console.error("Error creating Bunny collection:", error)
+    return NextResponse.json(
+      { error: "Failed to create collection", details: String(error) },
+      { status: 500 }
+    )
+  }
+}
