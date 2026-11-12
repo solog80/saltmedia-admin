@@ -42,9 +42,11 @@ async function proxy(request: NextRequest, path: string[]) {
   if (link) responseHeaders.set('Link', link);
   const location = upstream.headers.get('location');
   if (location) {
-    const rewritten = location.startsWith(WHEP_ORIGIN)
-      ? `${WHEP_PREFIX}${location.slice(WHEP_ORIGIN.length)}`
-      : location;
+    const rewritten = location.startsWith('/')
+      ? `${WHEP_PREFIX}${location}`
+      : location.startsWith(WHEP_ORIGIN)
+        ? `${WHEP_PREFIX}${location.slice(WHEP_ORIGIN.length)}`
+        : location;
     responseHeaders.set('Location', rewritten);
   }
   responseHeaders.set('Cache-Control', 'no-store');
