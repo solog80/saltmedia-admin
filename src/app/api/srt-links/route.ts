@@ -14,12 +14,13 @@ async function requireAdmin(request: NextRequest) {
 }
 
 function buildLink(path: string, passphrase: string) {
-  const query = new URLSearchParams({
-    streamid: `publish:${path}`,
-    passphrase,
-    pbkeylen: '16',
-  });
-  return `srt://${SRT_HOST}:${SRT_PORT}?${query.toString()}`;
+  const streamId = `publish:${path}`;
+  const query = [
+    `streamid=${streamId}`,
+    `passphrase=${encodeURIComponent(passphrase)}`,
+    'pbkeylen=16',
+  ].join('&');
+  return `srt://${SRT_HOST}:${SRT_PORT}?${query}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
       id: doc.id,
       name: data.name,
       path: data.path,
-      link: data.link,
+      link: String(data.link || '').replace('streamid=publish%3A', 'streamid=publish:'),
       createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
     };
   });
