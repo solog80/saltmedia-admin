@@ -38,6 +38,7 @@ function DestForm({ form, setForm, onSave, onCancel }: any) {
           <input className="bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" type="number" placeholder="Port" value={form.port||''} onChange={e => setForm({...form, port: Number(e.target.value)})} />
           <input className="bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" placeholder="Stream ID" value={form.streamId||''} onChange={e => setForm({...form, streamId: e.target.value})} />
           <input className="col-span-2 bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" placeholder="Passphrase" value={form.passphrase||''} onChange={e => setForm({...form, passphrase: e.target.value})} />
+          <input className="col-span-2 bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm" type="number" min="20" step="10" placeholder="SRT latency (ms)" value={form.latencyMs ?? 200} onChange={e => setForm({...form, latencyMs: Number(e.target.value)})} />
         </div>
       ) : isWebRtc ? (
         <div className="space-y-2">
@@ -169,11 +170,16 @@ export default function BroadcastPage() {
 
   const saveDest = () => {
     let dests = [...(config?.destinations || [])];
-    if (destForm.isDefault) {
+    const next = { ...destForm };
+    if (next.protocol === 'srt') {
+      const latency = Number(next.latencyMs);
+      next.latencyMs = Number.isFinite(latency) && latency >= 20 ? latency : 200;
+    }
+    if (next.isDefault) {
       dests = dests.map((d: any) => ({ ...d, isDefault: false }));
     }
-    if (editDest) { const i = dests.findIndex((d:any) => d.id === editDest.id); if (i>=0) dests[i] = { ...destForm, id: editDest.id }; }
-    else dests.push({ ...destForm, id: `dest_${Date.now()}` });
+    if (editDest) { const i = dests.findIndex((d:any) => d.id === editDest.id); if (i>=0) dests[i] = { ...next, id: editDest.id }; }
+    else dests.push({ ...next, id: `dest_${Date.now()}` });
     updateConfig({ destinations: dests }); setShowDestForm(false); setEditDest(null);
   };
 
@@ -352,7 +358,7 @@ export default function BroadcastPage() {
               ))}
 
               <div className="border-t border-white/10 pt-4"/>
-              <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-white/80">Destinations</h3><button className="text-xs bg-amber-500 text-black px-3 py-1 rounded font-bold" onClick={()=>{setDestForm({protocol:'srt'});setEditDest(null);setShowDestForm(true)}}>+ Add</button></div>
+              <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-white/80">Destinations</h3><button className="text-xs bg-amber-500 text-black px-3 py-1 rounded font-bold" onClick={()=>{setDestForm({protocol:'srt',latencyMs:200});setEditDest(null);setShowDestForm(true)}}>+ Add</button></div>
               {(config.destinations||[]).length===0 ? <p className="text-sm text-white/40">No destinations</p> : (
                 <div className="space-y-2">
                   {(config.destinations||[]).map((d:any,i:number) => (
@@ -363,7 +369,7 @@ export default function BroadcastPage() {
                           <span className={`text-xs px-1.5 py-0.5 rounded ${d.protocol==='srt'?'bg-blue-500/20 text-blue-400':d.protocol==='webrtc'?'bg-purple-500/20 text-purple-400':'bg-green-500/20 text-green-400'}`}>{d.protocol==='webrtc'?'WHIP':(d.protocol||'srt').toUpperCase()}</span>
                           {d.isDefault && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">DEFAULT</span>}
                         </div>
-                        <div className="text-xs text-white/50">{d.protocol==='srt'?`${d.host}:${d.port}`:d.protocol==='webrtc'?d.webrtcUrl:d.rtmpUrl}{d.streamId?` / ${d.streamId}`:''}</div>
+                        <div className="text-xs text-white/50">{d.protocol==='srt'?`${d.host}:${d.port}`:d.protocol==='webrtc'?d.webrtcUrl:d.rtmpUrl}{d.streamId?` / ${d.streamId}`:''}{d.protocol==='srt'?` / ${d.latencyMs ?? 200} ms`:''}</div>
                       </div>
                       <div className="flex gap-1">
                         <button className="text-xs text-blue-400 hover:text-blue-300" onClick={()=>{setDestForm(d);setEditDest(d);setShowDestForm(true)}}>Edit</button>
