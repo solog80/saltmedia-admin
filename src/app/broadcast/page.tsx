@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Script from 'next/script';
 import Hls from 'hls.js';
 import BroadcastTabs from './BroadcastTabs';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
@@ -40,11 +41,90 @@ function normalizeHlsUrl(raw?: string): string | null {
   return value;
 }
 
+function normalizeWhepUrl(raw?: string): string | null {
+  const value = raw?.trim();
+  if (!value || !value.includes('/whep')) return null;
+  if (value.startsWith('/')) return value;
+  try {
+    const u = new URL(value);
+    return `/api/whep${u.pathname}${u.search}`;
+  } catch {}
+  return null;
+}
+
 function StreamPreview({ snapshot, streamUrl, hlsUrl }: { snapshot?: string; streamUrl?: string; hlsUrl?: string }) {
+  const whep = normalizeWhepUrl(hlsUrl);
+  if (whep) return <WhepPreview src={whep} snapshot={snapshot} />;
   const src = normalizeHlsUrl(hlsUrl) || getHlsUrl(streamUrl);
   if (src) return <HlsPreview src={src} snapshot={snapshot} />;
   const url = snapshot ? `data:image/jpeg;base64,${snapshot}` : null;
   return url ? <img src={url} className="w-full h-full object-contain" alt="" /> : <ColorBars />;
+}
+
+function WhepPreview({ src, snapshot }: { src: string; snapshot?: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    let closed = false;
+    let reader: any = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    setFailed(false);
+
+    const start = () => {
+      if (closed) return;
+      const Reader = (window as any).MediaMTXWebRTCReader;
+      if (!Reader) {
+        timer = setTimeout(start, 100);
+        return;
+      }
+      try {
+        reader = new Reader({
+          url: src,
+          onError: () => {
+            if (!closed) setFailed(true);
+          },
+          onTrack: (evt: RTCTrackEvent) => {
+            if (video && evt.streams[0]) {
+              video.srcObject = evt.streams[0];
+              video.play().catch(() => {});
+            }
+          },
+        });
+      } catch {
+        if (!closed) setFailed(true);
+      }
+    };
+
+    let script = document.querySelector<HTMLScriptElement>('script[data-whep-reader]');
+    if (!script) {
+      script = document.createElement('script');
+      script.src = '/reader.js';
+      script.async = true;
+      script.dataset.whepReader = 'true';
+      script.onload = start;
+      script.onerror = () => setFailed(true);
+      document.head.appendChild(script);
+    } else {
+      start();
+    }
+
+    return () => {
+      closed = true;
+      if (timer) clearTimeout(timer);
+      reader?.close();
+      video.srcObject = null;
+    };
+  }, [src]);
+
+  if (failed) {
+    const url = snapshot ? `data:image/jpeg;base64,${snapshot}` : null;
+    return url ? <img src={url} className="w-full h-full object-contain" alt="" /> : <ColorBars />;
+  }
+
+  return <video ref={videoRef} className="w-full h-full object-contain" autoPlay muted playsInline />;
 }
 
 function HlsPreview({ src, snapshot }: { src: string; snapshot?: string }) {
@@ -386,6 +466,7 @@ export default function BroadcastPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <Script src="/reader.js" strategy="afterInteractive" />
       <BroadcastTabs />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -430,14 +511,14 @@ export default function BroadcastPage() {
             <div className="bg-white/5 rounded-lg p-4 border border-white/10 space-y-4 max-w-xl">
               <div className="flex items-center gap-2 text-sm"><span className="text-white/40">ID:</span><code className="text-white/60 text-xs">{config.broadcasterId||selectedId}</code></div>
               <div className="border-t border-white/10 pt-4"/>
-              <h3 className="text-sm font-semibold text-white/80">Preview HLS</h3>
+              <h3 className="text-sm font-semibold text-white/80">Preview HLS / WHEP</h3>
               <p className="text-xs text-white/40">
-                Optional full HLS URL or <code>/api/hls/srt/4/playlist.m3u8</code>. Leave blank to derive it from the device&apos;s SRT destination.
+                Optional HLS or WHEP URL. Use <code>/api/hls/srt/4/playlist.m3u8</code> for HLS or <code>/api/whep/test/live/whep</code> for WebRTC.
               </p>
               <div className="flex gap-2">
                 <input
                   className="flex-1 bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm"
-                  placeholder="/api/hls/srt/4/playlist.m3u8"
+                  placeholder="/api/hls/srt/4/playlist.m3u8 or /api/whep/test/live/whep"
                   value={previewUrl}
                   onChange={e => setPreviewUrl(e.target.value)}
                 />
