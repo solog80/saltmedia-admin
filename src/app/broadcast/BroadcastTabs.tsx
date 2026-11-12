@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Eye, Mic, Tv } from 'lucide-react';
+import { Link2, Mic, Tv } from 'lucide-react';
 
 export default function BroadcastTabs() {
   const path = usePathname() || '';
   const radio = path.startsWith('/broadcast/radio');
-  const viewers = path.startsWith('/broadcast/viewers');
-  const tv = !radio && !viewers;
+  const srtLinks = path.startsWith('/broadcast/srt-links');
+  const tv = !radio && !srtLinks;
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-4">
@@ -24,15 +24,15 @@ export default function BroadcastTabs() {
         Live TV
       </Link>
       <Link
-        href="/broadcast/viewers"
+        href="/broadcast/srt-links"
         className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
-          viewers
+          srtLinks
             ? 'bg-blue-600 text-white shadow'
             : 'text-white/60 hover:bg-white/10 hover:text-white'
         }`}
       >
-        <Eye size={16} />
-        WHEP Viewers
+        <Link2 size={16} />
+        SRT Links
       </Link>
       <Link
         href="/broadcast/radio"

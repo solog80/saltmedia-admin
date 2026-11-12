@@ -41,18 +41,6 @@ function normalizeHlsUrl(raw?: string): string | null {
   return value;
 }
 
-function getWhepPath(raw?: string): string | null {
-  const value = raw?.trim();
-  if (!value) return null;
-  try {
-    const parts = new URL(value, 'https://local').pathname.split('/').filter(Boolean);
-    if (parts.length >= 2 && parts[parts.length - 1] === 'whep') {
-      return parts[parts.length - 2];
-    }
-  } catch {}
-  return null;
-}
-
 function normalizeWhepUrl(raw?: string): string | null {
   const value = raw?.trim();
   if (!value || !value.includes('/whep')) return null;
@@ -247,33 +235,9 @@ export default function BroadcastPage() {
   const [radioSaving, setRadioSaving] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewSaving, setPreviewSaving] = useState(false);
-  const [streamHealth, setStreamHealth] = useState<Record<string, boolean>>({});
 
   // Mesh key = Firebase UID (broadcasts/<id> may use a custom broadcasterId,
   // so prefer the `uid` field when present).
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const res = await fetch('/api/mediamtx/paths', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        const next: Record<string, boolean> = {};
-        for (const item of data.items || []) {
-          if (item?.name) next[item.name] = item.ready === true;
-        }
-        setStreamHealth(next);
-      } catch {}
-    };
-    void poll();
-    const timer = setInterval(poll, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
-
   const meshUid = devices.find(d => d.id === selectedId)?.uid || selectedId || '';
   const selectedDevice = devices.find(d => d.id === selectedId);
 
@@ -532,15 +496,13 @@ export default function BroadcastPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {devices.map(device => {
               const lastSeen = device.lastSeen?.toDate?.();
-              const healthPath = getWhepPath(device.hlsUrl);
-              const live = device.isLive || (healthPath ? streamHealth[healthPath] === true : false);
-              const stale = !live && lastSeen && Date.now() - lastSeen.getTime() > 120_000;
+              const stale = lastSeen && Date.now() - lastSeen.getTime() > 120_000;
               const isSel = selectedId === device.id;
               return (
                 <div key={device.id} className={`bg-white/5 rounded-lg border overflow-hidden cursor-pointer transition-all ${isSel ? 'ring-2 ring-amber-500' : ''} ${stale ? 'border-yellow-500/30' : 'border-white/10'}`} onClick={() => setSelectedId(device.id)}>
                   <div className="bg-black relative" style={{ aspectRatio:'16/9' }}>
                     {<StreamPreview snapshot={device.snapshot} streamUrl={device.streamUrl} hlsUrl={device.hlsUrl} />}
-                    <div className="absolute top-2 left-2"><span className={`px-1.5 py-0.5 rounded text-xs font-bold ${live ? 'bg-red-500 text-white' : stale ? 'bg-yellow-500/80 text-black' : 'bg-white/10 text-white/60'}`}>{live ? 'LIVE' : stale ? 'STALE' : 'OFF'}</span></div>
+                    <div className="absolute top-2 left-2"><span className={`px-1.5 py-0.5 rounded text-xs font-bold ${device.isLive ? 'bg-red-500 text-white' : stale ? 'bg-yellow-500/80 text-black' : 'bg-white/10 text-white/60'}`}>{device.isLive ? 'LIVE' : stale ? 'STALE' : 'OFF'}</span></div>
                     {device.streamUrl && <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent"><code className="text-blue-400 text-[10px] break-all select-all leading-tight block truncate">{getPreviewUrl(device.streamUrl)||device.streamUrl}</code></div>}
                   </div>
                   <div className="p-2 space-y-1">

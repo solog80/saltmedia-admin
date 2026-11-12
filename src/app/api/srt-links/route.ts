@@ -1,12 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { firebaseAdmin, verifySession } from '@/lib/firebaseAdmin';
-import { hashPassword, MEDIAMTX_MAX_VIEWERS, MEDIAMTX_USERS_COLLECTION } from '@/lib/mediamtxAuth';
 
 export const dynamic = 'force-dynamic';
+
+const COLLECTION = 'srt_links';
+const MAX_LINKS = 10;
+const SRT_HOST = process.env.SRT_LINK_HOST || '139.144.77.47';
+const SRT_PORT = process.env.SRT_LINK_PORT || '7105';
 
 async function requireAdmin(request: NextRequest) {
   const session = await verifySession(request.cookies.get('firebaseToken')?.value);
   return session?.role === 'admin' ? session : null;
+}
+
+function buildLink(path: string, passphrase: string) {
+  const query = new URLSearchParams({
+    streamid: `publish:${path}`,
+    passphrase,
+    pbkeylen: '16',
+  });
+  return `srt://${SRT_HOST}:${SRT_PORT}?${query.toString()}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -14,17 +27,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
-  const snap = await firebaseAdmin.firestore().collection(MEDIAMTX_USERS_COLLECTION).get();
+  const snap = await firebaseAdmin.firestore().collection(COLLECTION).orderBy('createdAt', 'desc').get();
   const items = snap.docs.map((doc) => {
     const data = doc.data();
     return {
       id: doc.id,
-      username: data.username,
-      enabled: data.enabled !== false,
+      name: data.name,
+      path: data.path,
+      link: data.link,
       createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
     };
   });
-  return NextResponse.json({ items, max: MEDIAMTX_MAX_VIEWERS });
+  return NextResponse.json({ items, max: MAX_LINKS });
 }
 
 export async function POST(request: NextRequest) {
@@ -33,44 +47,43 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
-  let body: { username?: string; password?: string };
+  let body: { name?: string; path?: string; passphrase?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
   }
 
-  const username = body.username?.trim() || '';
-  const password = body.password || '';
-  if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
-    return NextResponse.json({ error: 'Username must be 3-32 characters (letters, numbers, . _ -)' }, { status: 400 });
+  const name = body.name?.trim() || '';
+  const path = body.path?.trim() || '';
+  const passphrase = body.passphrase || '';
+
+  if (!name || name.length > 64) {
+    return NextResponse.json({ error: 'Name is required (max 64 characters)' }, { status: 400 });
   }
-  if (password.length < 8) {
-    return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });
+  if (!/^[a-zA-Z0-9._-]{1,64}$/.test(path)) {
+    return NextResponse.json({ error: 'Path may contain letters, numbers, . _ -' }, { status: 400 });
+  }
+  if (passphrase.length < 10 || passphrase.length > 79) {
+    return NextResponse.json({ error: 'Passphrase must be 10-79 characters' }, { status: 400 });
   }
 
-  const col = firebaseAdmin.firestore().collection(MEDIAMTX_USERS_COLLECTION);
-  const existing = await col.where('username', '==', username).limit(1).get();
-  if (!existing.empty) {
-    return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
-  }
-
+  const col = firebaseAdmin.firestore().collection(COLLECTION);
   const all = await col.get();
-  if (all.size >= MEDIAMTX_MAX_VIEWERS) {
-    return NextResponse.json({ error: `Limit of ${MEDIAMTX_MAX_VIEWERS} viewers reached` }, { status: 409 });
+  if (all.size >= MAX_LINKS) {
+    return NextResponse.json({ error: `Limit of ${MAX_LINKS} SRT links reached` }, { status: 409 });
   }
 
-  const { salt, hash } = hashPassword(password);
+  const link = buildLink(path, passphrase);
   const ref = await col.add({
-    username,
-    salt,
-    hash,
-    enabled: true,
+    name,
+    path,
+    link,
     createdAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
     createdBy: session.uid,
   });
 
-  return NextResponse.json({ id: ref.id, username });
+  return NextResponse.json({ id: ref.id, name, path, link });
 }
 
 export async function DELETE(request: NextRequest) {
@@ -88,6 +101,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'id required' }, { status: 400 });
   }
 
-  await firebaseAdmin.firestore().collection(MEDIAMTX_USERS_COLLECTION).doc(body.id).delete();
+  await firebaseAdmin.firestore().collection(COLLECTION).doc(body.id).delete();
   return NextResponse.json({ success: true });
 }
