@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Hls from 'hls.js';
 import BroadcastTabs from './BroadcastTabs';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -13,9 +14,64 @@ function getPreviewUrl(streamUrl: string): string | null {
   try { const u = new URL(streamUrl.replace('srt://', 'http://')); const p = u.port ? Number(u.port) + PREVIEW_PORT_OFFSET : 0; return p ? `srt://${u.hostname}:${p}${u.search}` : null; } catch { return null; }
 }
 
+function getHlsUrl(streamUrl?: string): string | null {
+  if (!streamUrl?.startsWith('srt://')) return null;
+  try {
+    const u = new URL(streamUrl.replace('srt://', 'http://'));
+    const stream = Number(u.port) - 7000;
+    if (!Number.isInteger(stream) || stream < 1 || stream > 99) return null;
+    return `/api/hls/srt/${stream}/playlist.m3u8`;
+  } catch {
+    return null;
+  }
+}
+
 function ColorBars() { const c=['#ffffff','#ffff00','#00ffff','#00ff00','#ff00ff','#ff0000','#0000ff']; return <svg viewBox="0 0 640 480" className="w-full h-full">{c.map((x,i)=><rect key={i} x={i*91.4} y={0} width={91.4} height={280} fill={x}/>)}<rect x={0} y={280} width={213.3} height={60} fill="#406080"/><rect x={213.3} y={280} width={213.3} height={60} fill="#fff"/><rect x={426.6} y={280} width={213.3} height={60} fill="#c06080"/>{[0,1,2,3,4,5,6].map(i=><rect key={i} x={i*91.4} y={340} width={91.4} height={140} fill={['#000','#102030','#000','#203040','#000','#101010','#000'][i]}/>)}</svg>; }
 
-function StreamPreview({ snapshot }: { snapshot?: string }) { const url = snapshot ? `data:image/jpeg;base64,${snapshot}` : null; return url ? <img src={url} className="w-full h-full object-contain" alt="" /> : null; }
+function StreamPreview({ snapshot, streamUrl }: { snapshot?: string; streamUrl?: string }) {
+  const hlsUrl = getHlsUrl(streamUrl);
+  if (hlsUrl) return <HlsPreview src={hlsUrl} snapshot={snapshot} />;
+  const url = snapshot ? `data:image/jpeg;base64,${snapshot}` : null;
+  return url ? <img src={url} className="w-full h-full object-contain" alt="" /> : <ColorBars />;
+}
+
+function HlsPreview({ src, snapshot }: { src: string; snapshot?: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setFailed(false);
+    let hls: Hls | null = null;
+
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = src;
+    } else if (Hls.isSupported()) {
+      hls = new Hls({ lowLatencyMode: true, backBufferLength: 30 });
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) setFailed(true);
+      });
+    } else {
+      setFailed(true);
+    }
+
+    return () => {
+      hls?.destroy();
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, [src]);
+
+  if (failed) {
+    const url = snapshot ? `data:image/jpeg;base64,${snapshot}` : null;
+    return url ? <img src={url} className="w-full h-full object-contain" alt="" /> : <ColorBars />;
+  }
+
+  return <video ref={videoRef} className="w-full h-full object-contain" autoPlay muted playsInline />;
+}
 
 type BroadcastStatus = { id: string; uid?: string; broadcasterName?: string; isLive: boolean; uptime: number; bitrate: number; rttMs: number; packetsDropped: number; returnFeedUrl: string; streamUrl?: string; snapshot?: string; talkbackActive: boolean; lastSeen?: { toDate: () => Date }; };
 type BroadcastConfig = Record<string, any>;
@@ -311,7 +367,7 @@ export default function BroadcastPage() {
               return (
                 <div key={device.id} className={`bg-white/5 rounded-lg border overflow-hidden cursor-pointer transition-all ${isSel ? 'ring-2 ring-amber-500' : ''} ${stale ? 'border-yellow-500/30' : 'border-white/10'}`} onClick={() => setSelectedId(device.id)}>
                   <div className="bg-black relative" style={{ aspectRatio:'16/9' }}>
-                    {device.isLive ? <StreamPreview snapshot={device.snapshot} /> : <ColorBars />}
+                    {device.isLive ? <StreamPreview snapshot={device.snapshot} streamUrl={device.streamUrl} /> : <ColorBars />}
                     <div className="absolute top-2 left-2"><span className={`px-1.5 py-0.5 rounded text-xs font-bold ${device.isLive ? 'bg-red-500 text-white' : stale ? 'bg-yellow-500/80 text-black' : 'bg-white/10 text-white/60'}`}>{device.isLive ? 'LIVE' : stale ? 'STALE' : 'OFF'}</span></div>
                     {device.streamUrl && <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent"><code className="text-blue-400 text-[10px] break-all select-all leading-tight block truncate">{getPreviewUrl(device.streamUrl)||device.streamUrl}</code></div>}
                   </div>
