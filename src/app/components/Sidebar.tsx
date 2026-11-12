@@ -7,7 +7,7 @@ import Home01Icon from '@hugeicons/core-free-icons/dist/esm/Home01Icon';
 import UserGroupIcon from '@hugeicons/core-free-icons/dist/esm/UserGroupIcon';
 import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon';
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
-import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen, Tv, Mic } from 'lucide-react';
+import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen, Tv, Mic, Eye } from 'lucide-react';
 import LogoutButton from './LogoutButton';
 
 const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean; onClose?: () => void }) => {
@@ -146,6 +146,10 @@ const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean
             <SidebarLink href="/broadcast/radio" collapsed={collapsed} sub tooltip="Live Radio" onClick={handleNavClick}>
               <Mic size={14} />
               <span className={collapsed ? 'hidden' : ''}>Live Radio</span>
+            </SidebarLink>
+            <SidebarLink href="/broadcast/viewers" collapsed={collapsed} sub tooltip="WHEP Viewers" onClick={handleNavClick}>
+              <Eye size={14} />
+              <span className={collapsed ? 'hidden' : ''}>WHEP Viewers</span>
             </SidebarLink>
             <SidebarLink href="/ads" collapsed={collapsed} tooltip="Ads" onClick={handleNavClick}>
               <Play size={20} />

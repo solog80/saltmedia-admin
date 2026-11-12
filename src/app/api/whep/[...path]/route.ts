@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { previewToken } from '@/lib/mediamtxAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,7 @@ async function proxy(request: NextRequest, path: string[]) {
   if (accept) headers.set('Accept', accept);
   const ifMatch = request.headers.get('if-match');
   if (ifMatch) headers.set('If-Match', ifMatch);
+  headers.set('Authorization', `Bearer ${previewToken()}`);
 
   const body =
     request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS'
