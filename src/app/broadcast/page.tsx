@@ -28,9 +28,21 @@ function getHlsUrl(streamUrl?: string): string | null {
 
 function ColorBars() { const c=['#ffffff','#ffff00','#00ffff','#00ff00','#ff00ff','#ff0000','#0000ff']; return <svg viewBox="0 0 640 480" className="w-full h-full">{c.map((x,i)=><rect key={i} x={i*91.4} y={0} width={91.4} height={280} fill={x}/>)}<rect x={0} y={280} width={213.3} height={60} fill="#406080"/><rect x={213.3} y={280} width={213.3} height={60} fill="#fff"/><rect x={426.6} y={280} width={213.3} height={60} fill="#c06080"/>{[0,1,2,3,4,5,6].map(i=><rect key={i} x={i*91.4} y={340} width={91.4} height={140} fill={['#000','#102030','#000','#203040','#000','#101010','#000'][i]}/>)}</svg>; }
 
-function StreamPreview({ snapshot, streamUrl }: { snapshot?: string; streamUrl?: string }) {
-  const hlsUrl = getHlsUrl(streamUrl);
-  if (hlsUrl) return <HlsPreview src={hlsUrl} snapshot={snapshot} />;
+function normalizeHlsUrl(raw?: string): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  if (value.startsWith('/')) return value;
+  try {
+    const u = new URL(value);
+    if (u.protocol === 'http:') return `/api/hls${u.pathname}${u.search}`;
+    if (u.protocol === 'https:') return value;
+  } catch {}
+  return value;
+}
+
+function StreamPreview({ snapshot, streamUrl, hlsUrl }: { snapshot?: string; streamUrl?: string; hlsUrl?: string }) {
+  const src = normalizeHlsUrl(hlsUrl) || getHlsUrl(streamUrl);
+  if (src) return <HlsPreview src={src} snapshot={snapshot} />;
   const url = snapshot ? `data:image/jpeg;base64,${snapshot}` : null;
   return url ? <img src={url} className="w-full h-full object-contain" alt="" /> : <ColorBars />;
 }
@@ -73,7 +85,7 @@ function HlsPreview({ src, snapshot }: { src: string; snapshot?: string }) {
   return <video ref={videoRef} className="w-full h-full object-contain" autoPlay muted playsInline />;
 }
 
-type BroadcastStatus = { id: string; uid?: string; broadcasterName?: string; isLive: boolean; uptime: number; bitrate: number; rttMs: number; packetsDropped: number; returnFeedUrl: string; streamUrl?: string; snapshot?: string; talkbackActive: boolean; lastSeen?: { toDate: () => Date }; };
+type BroadcastStatus = { id: string; uid?: string; broadcasterName?: string; isLive: boolean; uptime: number; bitrate: number; rttMs: number; packetsDropped: number; returnFeedUrl: string; streamUrl?: string; snapshot?: string; hlsUrl?: string; talkbackActive: boolean; lastSeen?: { toDate: () => Date }; };
 type BroadcastConfig = Record<string, any>;
 
 function DestForm({ form, setForm, onSave, onCancel }: any) {
@@ -127,10 +139,17 @@ export default function BroadcastPage() {
   const [editDest, setEditDest] = useState<any>(null);
   const [radio, setRadio] = useState<Record<string, any> | null>(null);
   const [radioSaving, setRadioSaving] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewSaving, setPreviewSaving] = useState(false);
 
   // Mesh key = Firebase UID (broadcasts/<id> may use a custom broadcasterId,
   // so prefer the `uid` field when present).
   const meshUid = devices.find(d => d.id === selectedId)?.uid || selectedId || '';
+  const selectedDevice = devices.find(d => d.id === selectedId);
+
+  useEffect(() => {
+    setPreviewUrl(selectedDevice?.hlsUrl || '');
+  }, [selectedId, selectedDevice?.hlsUrl]);
 
   useEffect(() => {
     const unsub = onSnapshot(query(collection(db, 'broadcasts'), orderBy('lastSeen','desc')), snap => { const list: BroadcastStatus[] = []; snap.forEach(d => list.push({ id: d.id, ...d.data() } as BroadcastStatus)); setDevices(list); });
@@ -240,6 +259,26 @@ export default function BroadcastPage() {
   };
 
   const delDest = (id: string) => updateConfig({ destinations: (config?.destinations||[]).filter((d:any) => d.id !== id) });
+
+  const savePreview = async () => {
+    if (!selectedId) return;
+    setPreviewSaving(true);
+    try {
+      const res = await fetch('/api/broadcast_preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedId, hlsUrl: previewUrl }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      alert(`Preview URL save failed: ${e}`);
+    } finally {
+      setPreviewSaving(false);
+    }
+  };
 
   const tvSections: any[] = [
     { key: 'broadcaster', label: 'Broadcaster', fields: [
@@ -367,7 +406,7 @@ export default function BroadcastPage() {
               return (
                 <div key={device.id} className={`bg-white/5 rounded-lg border overflow-hidden cursor-pointer transition-all ${isSel ? 'ring-2 ring-amber-500' : ''} ${stale ? 'border-yellow-500/30' : 'border-white/10'}`} onClick={() => setSelectedId(device.id)}>
                   <div className="bg-black relative" style={{ aspectRatio:'16/9' }}>
-                    {device.isLive ? <StreamPreview snapshot={device.snapshot} streamUrl={device.streamUrl} /> : <ColorBars />}
+                    {device.isLive ? <StreamPreview snapshot={device.snapshot} streamUrl={device.streamUrl} hlsUrl={device.hlsUrl} /> : <ColorBars />}
                     <div className="absolute top-2 left-2"><span className={`px-1.5 py-0.5 rounded text-xs font-bold ${device.isLive ? 'bg-red-500 text-white' : stale ? 'bg-yellow-500/80 text-black' : 'bg-white/10 text-white/60'}`}>{device.isLive ? 'LIVE' : stale ? 'STALE' : 'OFF'}</span></div>
                     {device.streamUrl && <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent"><code className="text-blue-400 text-[10px] break-all select-all leading-tight block truncate">{getPreviewUrl(device.streamUrl)||device.streamUrl}</code></div>}
                   </div>
@@ -390,6 +429,26 @@ export default function BroadcastPage() {
           {!config ? <p className="text-white/50">Loading...</p> : (
             <div className="bg-white/5 rounded-lg p-4 border border-white/10 space-y-4 max-w-xl">
               <div className="flex items-center gap-2 text-sm"><span className="text-white/40">ID:</span><code className="text-white/60 text-xs">{config.broadcasterId||selectedId}</code></div>
+              <div className="border-t border-white/10 pt-4"/>
+              <h3 className="text-sm font-semibold text-white/80">Preview HLS</h3>
+              <p className="text-xs text-white/40">
+                Optional full HLS URL or <code>/api/hls/srt/4/playlist.m3u8</code>. Leave blank to derive it from the device&apos;s SRT destination.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm"
+                  placeholder="/api/hls/srt/4/playlist.m3u8"
+                  value={previewUrl}
+                  onChange={e => setPreviewUrl(e.target.value)}
+                />
+                <button
+                  className="bg-amber-500 text-black rounded px-3 py-2 text-sm font-bold disabled:opacity-50"
+                  onClick={savePreview}
+                  disabled={previewSaving}
+                >
+                  {previewSaving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
               <div className="border-t border-white/10 pt-4"/>
               <h3 className="text-sm font-semibold text-white/80">Device Settings</h3>
               <p className="text-xs text-white/40">
