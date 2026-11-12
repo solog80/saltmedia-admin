@@ -22,6 +22,8 @@ async function proxy(request: NextRequest, path: string[]) {
   if (contentType) headers.set('Content-Type', contentType);
   const accept = request.headers.get('accept');
   if (accept) headers.set('Accept', accept);
+  const ifMatch = request.headers.get('if-match');
+  if (ifMatch) headers.set('If-Match', ifMatch);
 
   const body =
     request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS'
