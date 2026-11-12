@@ -132,7 +132,7 @@ export default function SrtLinksPage() {
         <form onSubmit={createLink} className="space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
           <h2 className="font-semibold text-white">Create SRT link</h2>
           <p className="text-xs text-white/40">
-            The path must already exist in MediaMTX. Use the matching passphrase configured for that path.
+            If the path does not exist, it will be created on MediaMTX with this passphrase. Existing paths are left unchanged.
           </p>
           <label className="block text-sm text-white/70">
             Link name

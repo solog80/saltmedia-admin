@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { firebaseAdmin, verifySession } from '@/lib/firebaseAdmin';
+import { addMediaMtxPath, deleteMediaMtxPath, getMediaMtxPath } from '@/lib/mediamtxApi';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
       name: data.name,
       path: data.path,
       link: String(data.link || '').replace('streamid=publish%3A', 'streamid=publish:'),
+      managedPath: data.managedPath === true,
       createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
     };
   });
@@ -75,16 +77,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Limit of ${MAX_LINKS} SRT links reached` }, { status: 409 });
   }
 
+  let managedPath = false;
+  try {
+    const existing = await getMediaMtxPath(path);
+    if (existing.status === 404) {
+      const created = await addMediaMtxPath(path, passphrase);
+      if (!created.ok) {
+        const detail = await created.text();
+        return NextResponse.json({ error: `MediaMTX path creation failed: ${detail || created.status}` }, { status: 502 });
+      }
+      managedPath = true;
+    } else if (!existing.ok) {
+      return NextResponse.json({ error: `MediaMTX path lookup failed: ${existing.status}` }, { status: 502 });
+    }
+  } catch (e) {
+    return NextResponse.json({ error: `MediaMTX unavailable: ${e}` }, { status: 502 });
+  }
+
   const link = buildLink(path, passphrase);
   const ref = await col.add({
     name,
     path,
     link,
+    managedPath,
     createdAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
     createdBy: session.uid,
   });
 
-  return NextResponse.json({ id: ref.id, name, path, link });
+  return NextResponse.json({ id: ref.id, name, path, link, managedPath });
 }
 
 export async function DELETE(request: NextRequest) {
@@ -102,6 +122,23 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'id required' }, { status: 400 });
   }
 
-  await firebaseAdmin.firestore().collection(COLLECTION).doc(body.id).delete();
+  const doc = await firebaseAdmin.firestore().collection(COLLECTION).doc(body.id).get();
+  if (!doc.exists) {
+    return NextResponse.json({ error: 'Link not found' }, { status: 404 });
+  }
+
+  const data = doc.data() || {};
+  if (data.managedPath === true && data.path) {
+    try {
+      const removed = await deleteMediaMtxPath(String(data.path));
+      if (!removed.ok && removed.status !== 404) {
+        return NextResponse.json({ error: `MediaMTX path removal failed: ${removed.status}` }, { status: 502 });
+      }
+    } catch (e) {
+      return NextResponse.json({ error: `MediaMTX unavailable: ${e}` }, { status: 502 });
+    }
+  }
+
+  await doc.ref.delete();
   return NextResponse.json({ success: true });
 }
