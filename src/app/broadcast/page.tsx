@@ -124,7 +124,21 @@ function WhepPreview({ src, snapshot }: { src: string; snapshot?: string }) {
     return url ? <img src={url} className="w-full h-full object-contain" alt="" /> : <ColorBars />;
   }
 
-  return <video ref={videoRef} className="w-full h-full object-contain" autoPlay muted playsInline />;
+  return (
+    <video
+      ref={videoRef}
+      className="w-full h-full object-contain"
+      autoPlay
+      controls
+      muted
+      playsInline
+      onClick={(event) => {
+        const video = event.currentTarget;
+        video.muted = false;
+        video.play().catch(() => {});
+      }}
+    />
+  );
 }
 
 function HlsPreview({ src, snapshot }: { src: string; snapshot?: string }) {
