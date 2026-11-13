@@ -41,6 +41,17 @@ function normalizeHlsUrl(raw?: string): string | null {
   return value;
 }
 
+function getWhepPathFromStreamUrl(raw?: string): string | null {
+  if (!raw?.startsWith('srt://')) return null;
+  try {
+    const url = new URL(raw.replace(/^srt:/, 'http:'));
+    const streamId = url.searchParams.get('streamid') || '';
+    const match = streamId.match(/^(?:publish|read):([^:&]+)/);
+    return match ? match[1] : null;
+  } catch {}
+  return null;
+}
+
 function normalizeWhepUrl(raw?: string): string | null {
   const value = raw?.trim();
   if (!value || !value.includes('/whep')) return null;
@@ -53,7 +64,9 @@ function normalizeWhepUrl(raw?: string): string | null {
 }
 
 function StreamPreview({ snapshot, streamUrl, hlsUrl }: { snapshot?: string; streamUrl?: string; hlsUrl?: string }) {
-  const whep = normalizeWhepUrl(hlsUrl);
+  const streamPath = getWhepPathFromStreamUrl(streamUrl);
+  const derivedWhep = streamPath ? normalizeWhepUrl(`/api/whep/${streamPath}_whep/whep`) : null;
+  const whep = derivedWhep || normalizeWhepUrl(hlsUrl);
   if (whep) return <WhepPreview src={whep} snapshot={snapshot} />;
   const src = normalizeHlsUrl(hlsUrl) || getHlsUrl(streamUrl);
   if (src) return <HlsPreview src={src} snapshot={snapshot} />;
