@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { firebaseAdmin, verifySession } from '@/lib/firebaseAdmin';
+import { firebaseAdmin } from '@/lib/firebaseAdmin';
+import { isStaff } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const session = await verifySession(request.cookies.get('firebaseToken')?.value);
-  if (!session) {
+  if (!isStaff(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
