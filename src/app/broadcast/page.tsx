@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import Script from 'next/script';
 import Hls from 'hls.js';
 import BroadcastTabs from './BroadcastTabs';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { mesh, BROADCAST_CONFIG_TABLE } from '@/lib/mesh';
 
 const PREVIEW_PORT_OFFSET = 1000;
@@ -211,6 +209,25 @@ function HlsPreview({ src, snapshot }: { src: string; snapshot?: string }) {
 
 type BroadcastStatus = { id: string; uid?: string; broadcasterName?: string; isLive: boolean; uptime: number; bitrate: number; rttMs: number; packetsDropped: number; returnFeedUrl: string; streamUrl?: string; snapshot?: string; hlsUrl?: string; talkbackActive: boolean; lastSeen?: { toDate: () => Date }; lastSeenMs?: number | null; };
 type BroadcastConfig = Record<string, any>;
+function statusFromRow(row: any): BroadcastStatus {
+  const lastSeenMs = row.last_seen ? new Date(row.last_seen).getTime() : null;
+  return {
+    id: String(row.user_id),
+    uid: row.user_id,
+    broadcasterName: row.broadcaster_name || '',
+    isLive: row.is_live === true,
+    uptime: Number(row.uptime) || 0,
+    bitrate: Number(row.bitrate) || 0,
+    rttMs: Number(row.rtt_ms) || 0,
+    packetsDropped: Number(row.packets_dropped) || 0,
+    returnFeedUrl: row.return_feed_url || '',
+    streamUrl: row.stream_url || '',
+    hlsUrl: row.hls_url || '',
+    talkbackActive: row.talkback_active === true,
+    lastSeenMs,
+  };
+}
+
 
 function DestForm({ form, setForm, onSave, onCancel }: any) {
   const isSrt = form.protocol === 'srt';
@@ -266,25 +283,35 @@ export default function BroadcastPage() {
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewSaving, setPreviewSaving] = useState(false);
 
-  // Mesh key = Firebase UID (broadcasts/<id> may use a custom broadcasterId,
-  // so prefer the `uid` field when present).
+  // Live status lives in the Supabase mesh; Realtime is primary, REST polling
+  // is the fallback when the websocket is interrupted.
   useEffect(() => {
     let cancelled = false;
-    const poll = async () => {
+    const load = async () => {
       try {
-        const res = await fetch('/api/broadcasts', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled && Array.isArray(data.items)) {
-          setDevices(data.items as BroadcastStatus[]);
+        const { data, error } = await mesh
+          .from('broadcast_status')
+          .select('*')
+          .order('last_seen', { ascending: false });
+        if (!cancelled && !error && Array.isArray(data)) {
+          setDevices(data.map(statusFromRow));
         }
       } catch {}
     };
-    void poll();
-    const timer = setInterval(poll, 10000);
+    void load();
+    const channel = mesh
+      .channel('broadcast_status:list')
+      .onPostgresChanges({
+        event: 'postgres_changes',
+        schema: 'public',
+        table: 'broadcast_status',
+      }, () => { void load(); })
+      .subscribe();
+    const timer = setInterval(load, 10000);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      mesh.removeChannel(channel);
     };
   }, []);
 
@@ -294,11 +321,6 @@ export default function BroadcastPage() {
   useEffect(() => {
     setPreviewUrl(selectedDevice?.hlsUrl || '');
   }, [selectedId, selectedDevice?.hlsUrl]);
-
-  useEffect(() => {
-    const unsub = onSnapshot(query(collection(db, 'broadcasts'), orderBy('lastSeen','desc')), snap => { const list: BroadcastStatus[] = []; snap.forEach(d => list.push({ id: d.id, ...d.data() } as BroadcastStatus)); setDevices(list); });
-    return () => unsub();
-  }, []);
 
   // TV + radio settings: protected REST load (admin session) + live Realtime.
   useEffect(() => {

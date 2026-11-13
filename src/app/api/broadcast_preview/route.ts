@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { firebaseAdmin, verifySession } from '@/lib/firebaseAdmin';
+import { verifySession } from '@/lib/firebaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,13 +16,29 @@ export async function POST(req: NextRequest) {
     }
 
     const hlsUrl = typeof body.hlsUrl === 'string' ? body.hlsUrl.trim() : '';
-    await firebaseAdmin.firestore().collection('broadcasts').doc(body.id).set(
-      {
-        hlsUrl,
-        previewUpdatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
+    const base = (process.env.REST_BASE_URL || '').replace(/\/$/, '');
+    const key = process.env.SERVICE_ROLE_KEY || '';
+    if (!base || !key) {
+      return NextResponse.json({ error: 'mesh not configured' }, { status: 500 });
+    }
+    const res = await fetch(`${base}/broadcast_status?on_conflict=user_id`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
       },
-      { merge: true },
-    );
+      body: JSON.stringify({
+        user_id: body.id,
+        hls_url: hlsUrl,
+        updated_at: new Date().toISOString(),
+      }),
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      return NextResponse.json({ error: `mesh write failed: ${res.status}` }, { status: 502 });
+    }
 
     return NextResponse.json({ success: true, id: body.id, hlsUrl });
   } catch (e) {
