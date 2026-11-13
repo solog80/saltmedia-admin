@@ -74,7 +74,15 @@ export async function PATCH(request: NextRequest, { params }: Context) {
 export async function DELETE(request: NextRequest, { params }: Context) {
   return proxy(request, (await params).path);
 }
-export async function OPTIONS() {
+export async function OPTIONS(request: NextRequest, { params }: Context) {
+  let link = '<stun:stun.l.google.com:19302>; rel="ice-server"';
+  try {
+    const upstream = await fetch(upstreamUrl((await params).path, request.nextUrl.search), {
+      method: 'OPTIONS',
+      cache: 'no-store',
+    });
+    link = upstream.headers.get('link') || link;
+  } catch {}
   return new NextResponse(null, {
     status: 204,
     headers: {
@@ -82,7 +90,7 @@ export async function OPTIONS() {
       'Access-Control-Allow-Methods': 'OPTIONS, GET, POST, PATCH, DELETE',
       'Access-Control-Allow-Headers': 'Authorization, Content-Type, If-Match',
       'Access-Control-Expose-Headers': 'Link, Location, ETag',
-      Link: '<stun:stun.l.google.com:19302>; rel="ice-server"',
+      Link: link,
     },
   });
 }
