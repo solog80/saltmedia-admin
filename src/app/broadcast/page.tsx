@@ -209,7 +209,7 @@ function HlsPreview({ src, snapshot }: { src: string; snapshot?: string }) {
   return <video ref={videoRef} className="w-full h-full object-contain" autoPlay muted playsInline />;
 }
 
-type BroadcastStatus = { id: string; uid?: string; broadcasterName?: string; isLive: boolean; uptime: number; bitrate: number; rttMs: number; packetsDropped: number; returnFeedUrl: string; streamUrl?: string; snapshot?: string; hlsUrl?: string; talkbackActive: boolean; lastSeen?: { toDate: () => Date }; };
+type BroadcastStatus = { id: string; uid?: string; broadcasterName?: string; isLive: boolean; uptime: number; bitrate: number; rttMs: number; packetsDropped: number; returnFeedUrl: string; streamUrl?: string; snapshot?: string; hlsUrl?: string; talkbackActive: boolean; lastSeen?: { toDate: () => Date }; lastSeenMs?: number | null; };
 type BroadcastConfig = Record<string, any>;
 
 function DestForm({ form, setForm, onSave, onCancel }: any) {
@@ -268,6 +268,26 @@ export default function BroadcastPage() {
 
   // Mesh key = Firebase UID (broadcasts/<id> may use a custom broadcasterId,
   // so prefer the `uid` field when present).
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/broadcasts', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.items)) {
+          setDevices(data.items as BroadcastStatus[]);
+        }
+      } catch {}
+    };
+    void poll();
+    const timer = setInterval(poll, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
   const meshUid = devices.find(d => d.id === selectedId)?.uid || selectedId || '';
   const selectedDevice = devices.find(d => d.id === selectedId);
 
@@ -525,7 +545,7 @@ export default function BroadcastPage() {
         {devices.length === 0 ? <p className="text-white/50">No devices reporting</p> : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {devices.map(device => {
-              const lastSeen = device.lastSeen?.toDate?.();
+              const lastSeen = device.lastSeen?.toDate?.() ?? (device.lastSeenMs ? new Date(device.lastSeenMs) : undefined);
               const stale = lastSeen && Date.now() - lastSeen.getTime() > 120_000;
               const isSel = selectedId === device.id;
               return (
