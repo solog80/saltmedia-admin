@@ -74,6 +74,15 @@ export async function PATCH(request: NextRequest, { params }: Context) {
 export async function DELETE(request: NextRequest, { params }: Context) {
   return proxy(request, (await params).path);
 }
-export async function OPTIONS(request: NextRequest, { params }: Context) {
-  return proxy(request, (await params).path);
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'OPTIONS, GET, POST, PATCH, DELETE',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, If-Match',
+      'Access-Control-Expose-Headers': 'Link, Location, ETag',
+      Link: '<stun:stun.l.google.com:19302>; rel="ice-server"',
+    },
+  });
 }
