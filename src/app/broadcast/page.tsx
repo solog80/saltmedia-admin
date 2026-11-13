@@ -292,7 +292,11 @@ export default function BroadcastPage() {
         }
       } catch {}
     };
+    const syncMediaMtx = async () => {
+      try { await fetch('/api/broadcasts', { cache: 'no-store' }); } catch {}
+    };
     void load();
+    void syncMediaMtx();
     const channel = mesh
       .channel('broadcast_status:list')
       .on(
@@ -301,7 +305,7 @@ export default function BroadcastPage() {
         () => { void load(); },
       )
       .subscribe();
-    const timer = setInterval(load, 10000);
+    const timer = setInterval(() => { void load(); void syncMediaMtx(); }, 10000);
     return () => {
       cancelled = true;
       clearInterval(timer);

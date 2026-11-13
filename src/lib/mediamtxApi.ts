@@ -38,3 +38,13 @@ export async function deleteMediaMtxPath(name: string): Promise<Response> {
     cache: 'no-store',
   });
 }
+
+export async function listMediaMtxPaths(): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/v3/paths/list`, {
+    headers: mediaMtxHeaders(),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`MediaMTX paths failed: ${res.status}`);
+  const body = await res.json();
+  return Array.isArray(body?.items) ? body.items : [];
+}
