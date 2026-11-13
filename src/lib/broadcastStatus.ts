@@ -35,7 +35,7 @@ export function broadcastPathFromStreamUrl(raw?: string | null): string | null {
   }
 }
 
-async function readRows(): Promise<StatusRow[]> {
+export async function readBroadcastStatusRows(): Promise<StatusRow[]> {
   if (!REST_BASE || !SERVICE_KEY) return [];
   const res = await fetch(`${REST_BASE}/broadcast_status?select=user_id,stream_url,is_live,last_seen&limit=1000`, {
     headers: headers(),
@@ -84,7 +84,7 @@ async function patchRow(userId: string, live: boolean, streamUrl?: string) {
 }
 
 async function applyReadyPaths(ready: Map<string, boolean>) {
-  const [rows, configRows] = await Promise.all([readRows(), readConfigs()]);
+  const [rows, configRows] = await Promise.all([readBroadcastStatusRows(), readConfigs()]);
   const configs = new Map(configRows.map((config) => [config.user_id, config]));
   await Promise.all(rows.map(async (row) => {
     const path = rowPath(row, configs);

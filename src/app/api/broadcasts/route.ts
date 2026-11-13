@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession } from '@/lib/firebaseAdmin';
-import { syncBroadcastStatusFromMediaMtx } from '@/lib/broadcastStatus';
+import { readBroadcastStatusRows, syncBroadcastStatusFromMediaMtx } from '@/lib/broadcastStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,8 +10,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
   try {
-    const ready = await syncBroadcastStatusFromMediaMtx();
-    return NextResponse.json({ success: true, ready: [...ready.entries()] });
+    await syncBroadcastStatusFromMediaMtx();
+    const items = await readBroadcastStatusRows();
+    return NextResponse.json({ success: true, items });
   } catch (e) {
     return NextResponse.json({ error: `sync failed: ${e}` }, { status: 502 });
   }
