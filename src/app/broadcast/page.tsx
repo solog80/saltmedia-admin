@@ -94,15 +94,12 @@ function WhepPreview({ src, snapshot }: { src: string; snapshot?: string }) {
       }
       try {
         scheduleFallback();
-        console.log('[WHEP] starting', src);
         reader = new Reader({
-          url: src,
-          onError: (err: unknown) => {
-            console.error('[WHEP] error', err);
+          url: absoluteSrc,
+          onError: () => {
             scheduleFallback();
           },
           onTrack: (evt: RTCTrackEvent) => {
-            console.log('[WHEP] track', evt.streams?.[0]);
             gotTrack = true;
             if (failTimer) {
               clearTimeout(failTimer);
@@ -115,11 +112,12 @@ function WhepPreview({ src, snapshot }: { src: string; snapshot?: string }) {
             }
           },
         });
-      } catch (err) {
-        console.error('[WHEP] start failed', err);
+      } catch {
         scheduleFallback();
       }
     };
+
+    const absoluteSrc = new URL(src, window.location.href).toString();
 
     let script = document.querySelector<HTMLScriptElement>('script[data-whep-reader]');
     if (!script) {
