@@ -70,10 +70,9 @@ function rowPath(row: StatusRow, configs: Map<string, ConfigRow>): string | null
   return destinationPath(configs.get(row.user_id));
 }
 
-async function patchRow(userId: string, live: boolean, streamUrl?: string) {
+async function patchRow(userId: string, live: boolean, extra: Record<string, unknown> = {}) {
   const now = new Date().toISOString();
-  const body: Record<string, unknown> = { is_live: live, last_seen: now, updated_at: now };
-  if (streamUrl) body.stream_url = streamUrl;
+  const body: Record<string, unknown> = { is_live: live, last_seen: now, updated_at: now, ...extra };
   const res = await fetch(`${REST_BASE}/broadcast_status?user_id=eq.${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     headers: headers(),
@@ -83,7 +82,7 @@ async function patchRow(userId: string, live: boolean, streamUrl?: string) {
   if (!res.ok) throw new Error(`status patch failed: ${res.status}`);
 }
 
-async function applyReadyPaths(ready: Map<string, boolean>) {
+async function applyReadyPaths(ready: Map<string, boolean>, stats: Map<string, any> = new Map()) {
   const [rows, configRows] = await Promise.all([readBroadcastStatusRows(), readConfigs()]);
   const configs = new Map(configRows.map((config) => [config.user_id, config]));
   await Promise.all(rows.map(async (row) => {
@@ -104,7 +103,18 @@ async function applyReadyPaths(ready: Map<string, boolean>) {
           streamUrl = `srt://${dest.host}:${dest.port}?streamid=publish:${path}`;
         }
       }
-      await patchRow(row.user_id, isLive, streamUrl);
+      const extra: Record<string, unknown> = {};
+      if (streamUrl) extra.stream_url = streamUrl;
+      const item = stats.get(path);
+      if (isLive && item) {
+        const readyMs = item.readyTime ? new Date(item.readyTime).getTime() : 0;
+        const uptime = readyMs ? Math.max(0, Math.floor((Date.now() - readyMs) / 1000)) : 0;
+        const seconds = Math.max(1, uptime);
+        const bitrate = Number(item.bytesReceived) > 0 ? Math.floor((Number(item.bytesReceived) * 8) / seconds) : 0;
+        if (uptime > 0) extra.uptime = uptime;
+        if (bitrate > 0) extra.bitrate = bitrate;
+      }
+      await patchRow(row.user_id, isLive, extra);
     }
   }));
 }
@@ -112,10 +122,14 @@ async function applyReadyPaths(ready: Map<string, boolean>) {
 export async function syncBroadcastStatusFromMediaMtx() {
   const items = await listMediaMtxPaths();
   const ready = new Map<string, boolean>();
+  const stats = new Map<string, any>();
   for (const item of items) {
-    if (typeof item?.name === 'string') ready.set(item.name, item.ready === true);
+    if (typeof item?.name === 'string') {
+      ready.set(item.name, item.ready === true);
+      stats.set(item.name, item);
+    }
   }
-  await applyReadyPaths(ready);
+  await applyReadyPaths(ready, stats);
   return ready;
 }
 
