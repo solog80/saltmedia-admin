@@ -5,8 +5,15 @@ const SERVICE_KEY = process.env.SERVICE_ROLE_KEY || '';
 
 type StatusRow = {
   user_id: string;
+  broadcaster_name?: string | null;
   stream_url?: string | null;
+  hls_url?: string | null;
   is_live?: boolean;
+  uptime?: number | null;
+  bitrate?: number | null;
+  rtt_ms?: number | null;
+  packets_dropped?: number | null;
+  talkback_active?: boolean | null;
   last_seen?: string | null;
 };
 
@@ -37,7 +44,7 @@ export function broadcastPathFromStreamUrl(raw?: string | null): string | null {
 
 export async function readBroadcastStatusRows(): Promise<StatusRow[]> {
   if (!REST_BASE || !SERVICE_KEY) return [];
-  const res = await fetch(`${REST_BASE}/broadcast_status?select=user_id,stream_url,is_live,last_seen&limit=1000`, {
+  const res = await fetch(`${REST_BASE}/broadcast_status?select=user_id,broadcaster_name,stream_url,hls_url,is_live,uptime,bitrate,rtt_ms,packets_dropped,talkback_active,last_seen&limit=1000`, {
     headers: headers(),
     cache: 'no-store',
   });
