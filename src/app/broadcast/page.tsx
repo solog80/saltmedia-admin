@@ -71,7 +71,16 @@ function WhepPreview({ src, snapshot }: { src: string; snapshot?: string }) {
     let closed = false;
     let reader: any = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let failTimer: ReturnType<typeof setTimeout> | null = null;
+    let gotTrack = false;
     setFailed(false);
+
+    const scheduleFallback = () => {
+      if (closed || gotTrack || failTimer) return;
+      failTimer = setTimeout(() => {
+        if (!closed && !gotTrack) setFailed(true);
+      }, 12000);
+    };
 
     const start = () => {
       if (closed) return;
@@ -81,12 +90,19 @@ function WhepPreview({ src, snapshot }: { src: string; snapshot?: string }) {
         return;
       }
       try {
+        scheduleFallback();
         reader = new Reader({
           url: src,
           onError: () => {
-            if (!closed) setFailed(true);
+            scheduleFallback();
           },
           onTrack: (evt: RTCTrackEvent) => {
+            gotTrack = true;
+            if (failTimer) {
+              clearTimeout(failTimer);
+              failTimer = null;
+            }
+            setFailed(false);
             if (video && evt.streams[0]) {
               video.srcObject = evt.streams[0];
               video.play().catch(() => {});
@@ -94,7 +110,7 @@ function WhepPreview({ src, snapshot }: { src: string; snapshot?: string }) {
           },
         });
       } catch {
-        if (!closed) setFailed(true);
+        scheduleFallback();
       }
     };
 
@@ -114,6 +130,7 @@ function WhepPreview({ src, snapshot }: { src: string; snapshot?: string }) {
     return () => {
       closed = true;
       if (timer) clearTimeout(timer);
+      if (failTimer) clearTimeout(failTimer);
       reader?.close();
       video.srcObject = null;
     };
