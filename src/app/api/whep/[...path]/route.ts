@@ -53,7 +53,8 @@ async function proxy(request: NextRequest, path: string[]) {
   }
   responseHeaders.set('Cache-Control', 'no-store');
 
-  return new NextResponse(await upstream.arrayBuffer(), {
+  const noBody = upstream.status === 204 || upstream.status === 205 || upstream.status === 304;
+  return new NextResponse(noBody ? null : await upstream.arrayBuffer(), {
     status: upstream.status,
     headers: responseHeaders,
   });
