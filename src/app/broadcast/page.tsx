@@ -301,11 +301,11 @@ export default function BroadcastPage() {
     void load();
     const channel = mesh
       .channel('broadcast_status:list')
-      .onPostgresChanges({
-        event: 'postgres_changes',
-        schema: 'public',
-        table: 'broadcast_status',
-      }, () => { void load(); })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'broadcast_status' },
+        () => { void load(); },
+      )
       .subscribe();
     const timer = setInterval(load, 10000);
     return () => {
