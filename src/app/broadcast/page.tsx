@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Script from 'next/script';
 import Hls from 'hls.js';
 import BroadcastTabs from './BroadcastTabs';
 import { mesh, BROADCAST_CONFIG_TABLE } from '@/lib/mesh';
@@ -545,7 +544,6 @@ export default function BroadcastPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <Script src="/reader.js" strategy="afterInteractive" />
       <BroadcastTabs />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
