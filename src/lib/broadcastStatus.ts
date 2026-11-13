@@ -10,6 +10,11 @@ type StatusRow = {
   last_seen?: string | null;
 };
 
+type ConfigRow = {
+  user_id: string;
+  tv?: { destinations?: Array<Record<string, any>> } | null;
+};
+
 function headers(): HeadersInit {
   return {
     apikey: SERVICE_KEY,
@@ -40,26 +45,67 @@ async function readRows(): Promise<StatusRow[]> {
   return (await res.json()) as StatusRow[];
 }
 
-async function patchRow(userId: string, live: boolean) {
+async function readConfigs(): Promise<ConfigRow[]> {
+  if (!REST_BASE || !SERVICE_KEY) return [];
+  const res = await fetch(`${REST_BASE}/broadcast_config?select=user_id,tv&limit=1000`, {
+    headers: headers(),
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  return (await res.json()) as ConfigRow[];
+}
+
+function destinationPath(config: ConfigRow | undefined): string | null {
+  for (const dest of config?.tv?.destinations || []) {
+    const streamId = String(dest.streamId || '');
+    const match = streamId.match(/^publish:([^:&]+)/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function rowPath(row: StatusRow, configs: Map<string, ConfigRow>): string | null {
+  const direct = broadcastPathFromStreamUrl(row.stream_url);
+  if (direct) return direct;
+  return destinationPath(configs.get(row.user_id));
+}
+
+async function patchRow(userId: string, live: boolean, streamUrl?: string) {
   const now = new Date().toISOString();
+  const body: Record<string, unknown> = { is_live: live, last_seen: now, updated_at: now };
+  if (streamUrl) body.stream_url = streamUrl;
   const res = await fetch(`${REST_BASE}/broadcast_status?user_id=eq.${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     headers: headers(),
-    body: JSON.stringify({ is_live: live, last_seen: now, updated_at: now }),
+    body: JSON.stringify(body),
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`status patch failed: ${res.status}`);
 }
 
 async function applyReadyPaths(ready: Map<string, boolean>) {
-  const rows = await readRows();
+  const [rows, configRows] = await Promise.all([readRows(), readConfigs()]);
+  const configs = new Map(configRows.map((config) => [config.user_id, config]));
   await Promise.all(rows.map(async (row) => {
-    const path = broadcastPathFromStreamUrl(row.stream_url);
+    const path = rowPath(row, configs);
     if (!path || !ready.has(path)) return;
     const isLive = ready.get(path) === true;
     const seen = row.last_seen ? new Date(row.last_seen).getTime() : 0;
     const stale = Date.now() - seen > 45_000;
-    if (row.is_live !== isLive || stale) await patchRow(row.user_id, isLive);
+    const missingUrl = !row.stream_url && destinationPath(configs.get(row.user_id));
+    if (row.is_live !== isLive || stale || missingUrl) {
+      let streamUrl: string | undefined;
+      if (missingUrl) {
+        const dest = (configs.get(row.user_id)?.tv?.destinations || []).find((d) => {
+          const sid = String(d.streamId || '');
+          return sid.match(/^publish:([^:&]+)/)?.[1] === path;
+        });
+        if (dest?.host && dest?.port) {
+          streamUrl = `srt://${dest.host}:${dest.port}?streamid=publish:${path}`;
+        }
+      }
+      await patchRow(row.user_id, isLive, streamUrl);
+    }
   }));
 }
 
