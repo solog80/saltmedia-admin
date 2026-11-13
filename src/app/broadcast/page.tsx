@@ -6,13 +6,6 @@ import Hls from 'hls.js';
 import BroadcastTabs from './BroadcastTabs';
 import { mesh, BROADCAST_CONFIG_TABLE } from '@/lib/mesh';
 
-const PREVIEW_PORT_OFFSET = 1000;
-
-function getPreviewUrl(streamUrl: string): string | null {
-  if (!streamUrl.startsWith('srt://')) return null;
-  try { const u = new URL(streamUrl.replace('srt://', 'http://')); const p = u.port ? Number(u.port) + PREVIEW_PORT_OFFSET : 0; return p ? `srt://${u.hostname}:${p}${u.search}` : null; } catch { return null; }
-}
-
 function getHlsUrl(streamUrl?: string): string | null {
   if (!streamUrl?.startsWith('srt://')) return null;
   try {
@@ -575,7 +568,7 @@ export default function BroadcastPage() {
                   <div className="bg-black relative" style={{ aspectRatio:'16/9' }}>
                     {<StreamPreview snapshot={device.snapshot} streamUrl={device.streamUrl} hlsUrl={device.hlsUrl} />}
                     <div className="absolute top-2 left-2"><span className={`px-1.5 py-0.5 rounded text-xs font-bold ${device.isLive ? 'bg-red-500 text-white' : stale ? 'bg-yellow-500/80 text-black' : 'bg-white/10 text-white/60'}`}>{device.isLive ? 'LIVE' : stale ? 'STALE' : 'OFF'}</span></div>
-                    {device.streamUrl && <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent"><code className="text-blue-400 text-[10px] break-all select-all leading-tight block truncate">{getPreviewUrl(device.streamUrl)||device.streamUrl}</code></div>}
+                    {device.streamUrl && <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent"><code className="text-blue-400 text-[10px] break-all select-all leading-tight block truncate">{device.streamUrl}</code></div>}
                   </div>
                   <div className="p-2 space-y-1">
                     <div className="font-medium text-white text-sm truncate">{device.broadcasterName||device.id}</div>
