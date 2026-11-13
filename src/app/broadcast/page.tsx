@@ -53,7 +53,11 @@ function normalizeWhepUrl(raw?: string): string | null {
   return null;
 }
 
-function StreamPreview({ snapshot, streamUrl, hlsUrl }: { snapshot?: string; streamUrl?: string; hlsUrl?: string }) {
+function StreamPreview({ snapshot, streamUrl, hlsUrl, isLive }: { snapshot?: string; streamUrl?: string; hlsUrl?: string; isLive?: boolean }) {
+  if (isLive === false) {
+    const url = snapshot ? `data:image/jpeg;base64,${snapshot}` : null;
+    return url ? <img src={url} className="w-full h-full object-contain" alt="" /> : <ColorBars />;
+  }
   const streamPath = getWhepPathFromStreamUrl(streamUrl);
   const derivedWhep = streamPath ? normalizeWhepUrl(`/api/whep/${streamPath}_whep/whep`) : null;
   const whep = derivedWhep || normalizeWhepUrl(hlsUrl);
@@ -576,7 +580,7 @@ export default function BroadcastPage() {
               return (
                 <div key={device.id} className={`bg-white/5 rounded-lg border overflow-hidden cursor-pointer transition-all ${isSel ? 'ring-2 ring-amber-500' : ''} ${stale ? 'border-yellow-500/30' : 'border-white/10'}`} onClick={() => setSelectedId(device.id)}>
                   <div className="bg-black relative" style={{ aspectRatio:'16/9' }}>
-                    {<StreamPreview snapshot={device.snapshot} streamUrl={device.streamUrl} hlsUrl={device.hlsUrl} />}
+                    {<StreamPreview snapshot={device.snapshot} streamUrl={device.streamUrl} hlsUrl={device.hlsUrl} isLive={device.isLive} />}
                     <div className="absolute top-2 left-2"><span className={`px-1.5 py-0.5 rounded text-xs font-bold ${device.isLive ? 'bg-red-500 text-white' : stale ? 'bg-yellow-500/80 text-black' : 'bg-white/10 text-white/60'}`}>{device.isLive ? 'LIVE' : stale ? 'STALE' : 'OFF'}</span></div>
                     {device.streamUrl && <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent"><code className="text-blue-400 text-[10px] break-all select-all leading-tight block truncate">{device.streamUrl}</code></div>}
                   </div>
