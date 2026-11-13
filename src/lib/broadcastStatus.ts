@@ -96,33 +96,29 @@ async function applyReadyPaths(ready: Map<string, boolean>, stats: Map<string, a
     const path = rowPath(row, configs);
     if (!path || !ready.has(path)) return;
     const isLive = ready.get(path) === true;
-    const seen = row.last_seen ? new Date(row.last_seen).getTime() : 0;
-    const stale = Date.now() - seen > 45_000;
     const missingUrl = !row.stream_url && destinationPath(configs.get(row.user_id));
-    if (row.is_live !== isLive || stale || missingUrl) {
-      let streamUrl: string | undefined;
-      if (missingUrl) {
-        const dest = (configs.get(row.user_id)?.tv?.destinations || []).find((d) => {
-          const sid = String(d.streamId || '');
-          return sid.match(/^publish:([^:&]+)/)?.[1] === path;
-        });
-        if (dest?.host && dest?.port) {
-          streamUrl = `srt://${dest.host}:${dest.port}?streamid=publish:${path}`;
-        }
+    let streamUrl: string | undefined;
+    if (missingUrl) {
+      const dest = (configs.get(row.user_id)?.tv?.destinations || []).find((d) => {
+        const sid = String(d.streamId || '');
+        return sid.match(/^publish:([^:&]+)/)?.[1] === path;
+      });
+      if (dest?.host && dest?.port) {
+        streamUrl = `srt://${dest.host}:${dest.port}?streamid=publish:${path}`;
       }
-      const extra: Record<string, unknown> = {};
-      if (streamUrl) extra.stream_url = streamUrl;
-      const item = stats.get(path);
-      if (isLive && item) {
-        const readyMs = item.readyTime ? new Date(item.readyTime).getTime() : 0;
-        const uptime = readyMs ? Math.max(0, Math.floor((Date.now() - readyMs) / 1000)) : 0;
-        const seconds = Math.max(1, uptime);
-        const bitrate = Number(item.bytesReceived) > 0 ? Math.floor((Number(item.bytesReceived) * 8) / seconds) : 0;
-        if (uptime > 0) extra.uptime = uptime;
-        if (bitrate > 0) extra.bitrate = bitrate;
-      }
-      await patchRow(row.user_id, isLive, extra);
     }
+    const extra: Record<string, unknown> = {};
+    if (streamUrl) extra.stream_url = streamUrl;
+    const item = stats.get(path);
+    if (isLive && item) {
+      const readyMs = item.readyTime ? new Date(item.readyTime).getTime() : 0;
+      const uptime = readyMs ? Math.max(0, Math.floor((Date.now() - readyMs) / 1000)) : 0;
+      const seconds = Math.max(1, uptime);
+      const bitrate = Number(item.bytesReceived) > 0 ? Math.floor((Number(item.bytesReceived) * 8) / seconds) : 0;
+      if (uptime > 0) extra.uptime = uptime;
+      if (bitrate > 0) extra.bitrate = bitrate;
+    }
+    await patchRow(row.user_id, isLive, extra);
   }));
 }
 
