@@ -3,6 +3,14 @@ import { listMediaMtxPaths } from './mediamtxApi';
 const REST_BASE = (process.env.REST_BASE_URL || '').replace(/\/$/, '');
 const SERVICE_KEY = process.env.SERVICE_ROLE_KEY || '';
 
+// Reads used to PATCH on every request, which fired a Supabase Realtime event,
+// which made the dashboard reload, which PATCHed again (a runaway loop). Sync
+// is now throttled and only writes when something actually changed.
+const SYNC_MIN_INTERVAL_MS = 5_000;
+const HEARTBEAT_MS = 30_000;
+let lastSyncAt = 0;
+let syncInFlight: Promise<boolean> | null = null;
+
 type StatusRow = {
   user_id: string;
   broadcaster_name?: string | null;
@@ -92,11 +100,16 @@ async function patchRow(userId: string, live: boolean, extra: Record<string, unk
 async function applyReadyPaths(ready: Map<string, boolean>, stats: Map<string, any> = new Map()) {
   const [rows, configRows] = await Promise.all([readBroadcastStatusRows(), readConfigs()]);
   const configs = new Map(configRows.map((config) => [config.user_id, config]));
+  const now = Date.now();
   await Promise.all(rows.map(async (row) => {
     const path = rowPath(row, configs);
     if (!path || !ready.has(path)) return;
     const isLive = ready.get(path) === true;
+    const wasLive = row.is_live === true;
+    const lastSeenMs = row.last_seen ? new Date(row.last_seen).getTime() : 0;
+    const stale = !lastSeenMs || now - lastSeenMs >= HEARTBEAT_MS;
     const missingUrl = !row.stream_url && destinationPath(configs.get(row.user_id));
+
     let streamUrl: string | undefined;
     if (missingUrl) {
       const dest = (configs.get(row.user_id)?.tv?.destinations || []).find((d) => {
@@ -107,12 +120,19 @@ async function applyReadyPaths(ready: Map<string, boolean>, stats: Map<string, a
         streamUrl = `srt://${dest.host}:${dest.port}?streamid=publish:${path}`;
       }
     }
+
+    // Write only when the live state flips, a missing URL is recovered, or a
+    // live row needs a periodic heartbeat. Writing on every read is what made
+    // Realtime echo the change straight back into another request.
+    const needsWrite = isLive !== wasLive || Boolean(streamUrl) || (isLive && stale);
+    if (!needsWrite) return;
+
     const extra: Record<string, unknown> = {};
     if (streamUrl) extra.stream_url = streamUrl;
     const item = stats.get(path);
-    if (isLive && item) {
+    if (isLive && stale && item) {
       const readyMs = item.readyTime ? new Date(item.readyTime).getTime() : 0;
-      const uptime = readyMs ? Math.max(0, Math.floor((Date.now() - readyMs) / 1000)) : 0;
+      const uptime = readyMs ? Math.max(0, Math.floor((now - readyMs) / 1000)) : 0;
       const seconds = Math.max(1, uptime);
       const bitrate = Number(item.bytesReceived) > 0 ? Math.floor((Number(item.bytesReceived) * 8) / seconds) : 0;
       if (uptime > 0) extra.uptime = uptime;
@@ -122,18 +142,31 @@ async function applyReadyPaths(ready: Map<string, boolean>, stats: Map<string, a
   }));
 }
 
-export async function syncBroadcastStatusFromMediaMtx() {
-  const items = await listMediaMtxPaths();
-  const ready = new Map<string, boolean>();
-  const stats = new Map<string, any>();
-  for (const item of items) {
-    if (typeof item?.name === 'string') {
-      ready.set(item.name, item.ready === true);
-      stats.set(item.name, item);
-    }
+export async function syncBroadcastStatusFromMediaMtx(force = false): Promise<boolean> {
+  if (!force) {
+    if (syncInFlight) return syncInFlight;
+    if (Date.now() - lastSyncAt < SYNC_MIN_INTERVAL_MS) return false;
   }
-  await applyReadyPaths(ready, stats);
-  return ready;
+  const run = (async () => {
+    try {
+      const items = await listMediaMtxPaths();
+      const ready = new Map<string, boolean>();
+      const stats = new Map<string, any>();
+      for (const item of items) {
+        if (typeof item?.name === 'string') {
+          ready.set(item.name, item.ready === true);
+          stats.set(item.name, item);
+        }
+      }
+      await applyReadyPaths(ready, stats);
+      lastSyncAt = Date.now();
+      return true;
+    } finally {
+      syncInFlight = null;
+    }
+  })();
+  syncInFlight = run;
+  return run;
 }
 
 export async function applyMediaMtxHook(path: string, event: string) {
