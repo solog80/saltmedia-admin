@@ -164,7 +164,7 @@ const EmailAccountsPage = () => {
     onError: (e) => setError(e.message),
   });
 
-  const accounts = data?.accounts ?? [];
+  const accounts = (data?.accounts ?? []).filter((a) => a.email.toLowerCase().endsWith('@saltmedia.ug'));
 
   const openEdit = (account: EmailAccount) => {
     const [local, domain] = account.email.split('@');
@@ -354,7 +354,6 @@ const EmailAccountsPage = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="saltmedia.ug">saltmedia.ug</SelectItem>
-                    <SelectItem value="solofx.ug">solofx.ug</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
