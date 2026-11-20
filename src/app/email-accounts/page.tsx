@@ -321,7 +321,7 @@ const EmailAccountsPage = () => {
             </Table>
           </div>
           <p className="mt-4 text-xs text-white/40">
-            Mailboxes are provisioned on the QNAP mail server. New accounts get the Salt Media HTML signature automatically.
+            Mailboxes are provisioned on the mail server. New accounts get the Salt Media HTML signature automatically.
           </p>
         </div>
       </div>
