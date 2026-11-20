@@ -7,7 +7,7 @@ import Home01Icon from '@hugeicons/core-free-icons/dist/esm/Home01Icon';
 import UserGroupIcon from '@hugeicons/core-free-icons/dist/esm/UserGroupIcon';
 import Analytics01Icon from '@hugeicons/core-free-icons/dist/esm/Analytics01Icon';
 import Video01Icon from '@hugeicons/core-free-icons/dist/esm/Video01Icon';
-import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen, Tv, Mic, Link2 } from 'lucide-react';
+import { Calendar, Zap, DollarSign, Radio, BarChart3, FileText, Play, Image as ImageIcon, RadioTower, Bell, Newspaper, MessageSquare, PanelLeftClose, PanelLeftOpen, Tv, Mic, Link2, Mail } from 'lucide-react';
 import LogoutButton from './LogoutButton';
 
 const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean; onClose?: () => void }) => {
@@ -77,6 +77,12 @@ const Sidebar = ({ role, open, onClose }: { role?: string | null; open?: boolean
           <SidebarLink href="/user-management" collapsed={collapsed} tooltip="User Management" onClick={handleNavClick}>
             <HugeiconsIcon icon={UserGroupIcon} size={20} />
             <span className={collapsed ? 'hidden' : ''}>User Management</span>
+          </SidebarLink>
+        )}
+        {!isEditor && !isModerator && (
+          <SidebarLink href="/email-accounts" collapsed={collapsed} tooltip="Email Accounts" onClick={handleNavClick}>
+            <Mail size={20} />
+            <span className={collapsed ? 'hidden' : ''}>Email Accounts</span>
           </SidebarLink>
         )}
         <SidebarLink href="/news" collapsed={collapsed} tooltip="News" onClick={handleNavClick}>
