@@ -66,14 +66,21 @@ export async function POST(
     const { email } = await params;
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const action = body.action;
-    if (action !== 'password') {
-      return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+    if (action === 'password') {
+      const { res, data } = await mailAdmin(`/accounts/${encodeURIComponent(email)}/password`, {
+        method: 'POST',
+        body: JSON.stringify({ password: body.password }),
+      });
+      return NextResponse.json(data, { status: res.status });
     }
-    const { res, data } = await mailAdmin(`/accounts/${encodeURIComponent(email)}/password`, {
-      method: 'POST',
-      body: JSON.stringify({ password: body.password }),
-    });
-    return NextResponse.json(data, { status: res.status });
+    if (action === 'avatar') {
+      const { res, data } = await mailAdmin(`/accounts/${encodeURIComponent(email)}/avatar`, {
+        method: 'POST',
+        body: JSON.stringify({ image: body.image }),
+      });
+      return NextResponse.json(data, { status: res.status });
+    }
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   } catch (e) {
     return NextResponse.json({ error: `${e}` }, { status: 502 });
   }

@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Eye, KeyRound, Loader2, Plus, PencilLine } from 'lucide-react';
+import { Camera, Eye, KeyRound, Loader2, Plus, PencilLine } from 'lucide-react';
 
 interface EmailAccount {
   email: string;
@@ -38,6 +38,7 @@ interface EmailAccount {
   office?: string;
   website?: string;
   updated?: number;
+  avatar_url?: string | null;
   signature?: string;
 }
 
@@ -85,6 +86,45 @@ async function putJson(url: string, body: unknown) {
   return data;
 }
 
+
+async function fileToAvatarDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas not supported');
+  const scale = Math.max(size / bitmap.width, size / bitmap.height);
+  const sw = size / scale;
+  const sh = size / scale;
+  const sx = (bitmap.width - sw) / 2;
+  const sy = (bitmap.height - sh) / 2;
+  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, size, size);
+  return canvas.toDataURL('image/png');
+}
+
+function AvatarThumb({ account }: { account: EmailAccount }) {
+  if (account.avatar_url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={account.avatar_url}
+        alt=""
+        className="h-8 w-8 rounded-full object-cover ring-1 ring-white/20"
+      />
+    );
+  }
+  const local = account.email.split('@')[0].replace(/[._-]+/g, ' ');
+  const parts = (account.name || local).trim().split(/\s+/).filter(Boolean);
+  const initials = (parts[0]?.[0] || '?') + (parts[1]?.[0] || '');
+  return (
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-700/80 text-[11px] font-semibold text-white ring-1 ring-white/20">
+      {initials.toUpperCase()}
+    </span>
+  );
+}
+
 const EmailAccountsPage = () => {
   const queryClient = useQueryClient();
 
@@ -99,6 +139,9 @@ const EmailAccountsPage = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null);
+  const [avatarAccount, setAvatarAccount] = useState<EmailAccount | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
 
   const { data, isLoading, isError, error: queryError } = useQuery<{ accounts: EmailAccount[] }, Error>({
     queryKey: ['email-accounts'],
@@ -144,6 +187,22 @@ const EmailAccountsPage = () => {
       postJson(`/api/email-accounts/${encodeURIComponent(email)}`, { action: 'password' }),
     onSuccess: (result, email) => setCredentials({ email, password: result.password }),
     onError: (e) => setError(e.message),
+  });
+
+
+  const avatarMutation = useMutation<{ account: EmailAccount }, Error, { email: string; image: string }>({
+    mutationFn: async ({ email, image }) =>
+      postJson(`/api/email-accounts/${encodeURIComponent(email)}`, { action: 'avatar', image }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['email-accounts'] });
+      setAvatarAccount(null);
+      setAvatarPreview(null);
+      setAvatarBusy(false);
+    },
+    onError: (e) => {
+      setAvatarBusy(false);
+      setError(e.message);
+    },
   });
 
   const previewMutation = useMutation<{ signature: string }, Error, AccountForm & { email: string }>({
@@ -229,6 +288,7 @@ const EmailAccountsPage = () => {
             <Table>
               <TableHeader>
                 <TableRow className="border-white/20">
+                  <TableHead className="w-14 text-white/80">Photo</TableHead>
                   <TableHead className="text-white/80">Email</TableHead>
                   <TableHead className="text-white/80">Name</TableHead>
                   <TableHead className="text-white/80">Title</TableHead>
@@ -240,19 +300,20 @@ const EmailAccountsPage = () => {
               <TableBody>
                 {isLoading ? (
                   <TableRow className="border-white/20">
-                    <TableCell colSpan={6} className="h-24 text-center text-white/50">
+                    <TableCell colSpan={7} className="h-24 text-center text-white/50">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                     </TableCell>
                   </TableRow>
                 ) : isError ? (
                   <TableRow className="border-white/20">
-                    <TableCell colSpan={6} className="h-24 text-center text-red-300">
+                    <TableCell colSpan={7} className="h-24 text-center text-red-300">
                       Error: {queryError?.message}
                     </TableCell>
                   </TableRow>
                 ) : accounts.length ? (
                   accounts.map((account) => (
                     <TableRow key={account.email} className="border-white/20 hover:bg-white/5">
+                      <TableCell><AvatarThumb account={account} /></TableCell>
                       <TableCell className="font-medium text-white">{account.email}</TableCell>
                       <TableCell className="text-white/80">{account.name || '—'}</TableCell>
                       <TableCell className="text-white/80">{account.title || '—'}</TableCell>
@@ -262,6 +323,19 @@ const EmailAccountsPage = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Upload photo"
+                            className="text-emerald-300 hover:text-emerald-200 hover:bg-white/10"
+                            onClick={() => {
+                              setError(null);
+                              setAvatarPreview(null);
+                              setAvatarAccount(account);
+                            }}
+                          >
+                            <Camera className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -312,7 +386,7 @@ const EmailAccountsPage = () => {
                   ))
                 ) : (
                   <TableRow className="border-white/20">
-                    <TableCell colSpan={6} className="h-24 text-center text-white/50">
+                    <TableCell colSpan={7} className="h-24 text-center text-white/50">
                       No email accounts yet.
                     </TableCell>
                   </TableRow>
@@ -473,6 +547,64 @@ const EmailAccountsPage = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreviewOpen(false)} className="border-white/20 text-white hover:bg-white/10">
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
+      {/* Avatar upload */}
+      <Dialog open={!!avatarAccount} onOpenChange={(open) => { if (!open) { setAvatarAccount(null); setAvatarPreview(null); setAvatarBusy(false); } }}>
+        <DialogContent className="bg-zinc-900 text-white">
+          <DialogHeader>
+            <DialogTitle>Profile photo</DialogTitle>
+            <DialogDescription>{avatarAccount?.email}</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-4">
+            {avatarPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatarPreview} alt="" className="h-28 w-28 rounded-full object-cover ring-2 ring-white/20" />
+            ) : (
+              <div className="flex h-28 w-28 items-center justify-center rounded-full border border-dashed border-white/20 text-xs text-white/40">
+                Square photo
+              </div>
+            )}
+            <label className="cursor-pointer rounded-md border border-white/20 px-4 py-2 text-sm text-white hover:bg-white/10">
+              Choose image
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    setError(null);
+                    setAvatarPreview(await fileToAvatarDataUrl(file));
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Could not read image');
+                  }
+                }}
+              />
+            </label>
+            <p className="max-w-sm text-center text-xs text-white/50">
+              Square-cropped to 256×256. Shown in the dashboard and Roundcube webmail.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAvatarAccount(null); setAvatarPreview(null); }} className="border-white/20 text-white hover:bg-white/10">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!avatarAccount || !avatarPreview) return;
+                setAvatarBusy(true);
+                avatarMutation.mutate({ email: avatarAccount.email, image: avatarPreview });
+              }}
+              disabled={!avatarPreview || avatarBusy}
+              className="bg-red-700 hover:bg-red-800 text-white"
+            >
+              {avatarBusy ? 'Saving…' : 'Save photo'}
             </Button>
           </DialogFooter>
         </DialogContent>
