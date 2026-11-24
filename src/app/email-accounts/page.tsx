@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Camera, Eye, KeyRound, Loader2, Plus, PencilLine } from 'lucide-react';
+import { Camera, Check, Code2, Copy, Eye, KeyRound, Loader2, Plus, PencilLine } from 'lucide-react';
 
 interface EmailAccount {
   email: string;
@@ -137,6 +137,10 @@ const EmailAccountsPage = () => {
 
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [codeHtml, setCodeHtml] = useState('');
+  const [codeEmail, setCodeEmail] = useState('');
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null);
   const [avatarAccount, setAvatarAccount] = useState<EmailAccount | null>(null);
@@ -223,6 +227,26 @@ const EmailAccountsPage = () => {
     onError: (e) => setError(e.message),
   });
 
+  const codeMutation = useMutation<{ signature: string }, Error, AccountForm & { email: string }>({
+    mutationFn: async ({ email, ...f }) =>
+      postJson('/api/email-accounts', {
+        action: 'preview',
+        email,
+        name: f.name,
+        title: f.title,
+        mobile: f.mobile,
+        office: f.office,
+        website: f.website,
+      }),
+    onSuccess: (result, vars) => {
+      setCodeHtml(result.signature);
+      setCodeEmail(vars.email);
+      setCodeCopied(false);
+      setCodeOpen(true);
+    },
+    onError: (e) => setError(e.message),
+  });
+
   const accounts = (data?.accounts ?? []).filter((a) => a.email.toLowerCase().endsWith('@saltmedia.ug'));
 
   const openEdit = (account: EmailAccount) => {
@@ -239,6 +263,16 @@ const EmailAccountsPage = () => {
       password: '',
     });
   };
+
+  const accountToPayload = (account: EmailAccount) => ({
+    ...emptyForm(),
+    email: account.email,
+    name: account.name || '',
+    title: account.title || '',
+    mobile: account.mobile || '',
+    office: account.office || '',
+    website: account.website || 'https://saltmedia.ug',
+  });
 
   const previewForEdit = () => {
     if (!editAccount) return;
@@ -341,19 +375,26 @@ const EmailAccountsPage = () => {
                             size="sm"
                             title="Preview signature"
                             className="text-white/70 hover:text-white hover:bg-white/10"
-                            onClick={() =>
-                              previewMutation.mutate({
-                                ...emptyForm(),
-                                email: account.email,
-                                name: account.name || '',
-                                title: account.title || '',
-                                mobile: account.mobile || '',
-                                office: account.office || '',
-                                website: account.website || 'https://saltmedia.ug',
-                              })
-                            }
+                            onClick={() => previewMutation.mutate(accountToPayload(account))}
                           >
                             <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="View / copy signature HTML"
+                            className="text-violet-300 hover:text-violet-200 hover:bg-white/10"
+                            disabled={codeMutation.isPending}
+                            onClick={() => {
+                              setError(null);
+                              codeMutation.mutate(accountToPayload(account));
+                            }}
+                          >
+                            {codeMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Code2 className="h-4 w-4" />
+                            )}
                           </Button>
                           <Button
                             variant="ghost"
@@ -545,7 +586,65 @@ const EmailAccountsPage = () => {
             dangerouslySetInnerHTML={{ __html: previewHtml || '' }}
           />
           <DialogFooter>
+            <Button
+              variant="outline"
+              className="border-white/20 text-white hover:bg-white/10"
+              onClick={() => {
+                setCodeHtml(previewHtml || '');
+                setCodeEmail('');
+                setCodeCopied(false);
+                setPreviewOpen(false);
+                setCodeOpen(true);
+              }}
+            >
+              View / copy HTML
+            </Button>
             <Button variant="outline" onClick={() => setPreviewOpen(false)} className="border-white/20 text-white hover:bg-white/10">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Signature HTML */}
+      <Dialog open={codeOpen} onOpenChange={setCodeOpen}>
+        <DialogContent className="max-w-4xl bg-zinc-900 text-white">
+          <DialogHeader>
+            <DialogTitle>Signature HTML</DialogTitle>
+            <DialogDescription>
+              {codeEmail ? `${codeEmail} — ` : ''}
+              Paste into your mail client’s HTML signature editor. Images are loaded remotely.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            readOnly
+            value={codeHtml}
+            spellCheck={false}
+            onFocus={(e) => e.currentTarget.select()}
+            className="h-64 w-full resize-none rounded-md border border-white/20 bg-black/50 p-3 font-mono text-xs text-white/80 outline-none focus:border-white/40"
+          />
+          <p className="text-xs text-white/50">
+            Thunderbird: Account Settings → Signature text → enable “Use HTML” → paste. Apple Mail: Settings → Signatures → uncheck “Always match my default message font”.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="border-white/20 text-white hover:bg-white/10"
+              disabled={!codeHtml}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(codeHtml);
+                  setCodeCopied(true);
+                  setTimeout(() => setCodeCopied(false), 2000);
+                } catch {
+                  setError('Could not copy automatically — select the code above and copy it.');
+                }
+              }}
+            >
+              {codeCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+              {codeCopied ? 'Copied' : 'Copy HTML'}
+            </Button>
+            <Button variant="outline" onClick={() => setCodeOpen(false)} className="border-white/20 text-white hover:bg-white/10">
               Close
             </Button>
           </DialogFooter>
