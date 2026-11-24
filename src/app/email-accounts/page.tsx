@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Camera, Check, Code2, Copy, Eye, KeyRound, Loader2, Plus, PencilLine } from 'lucide-react';
+import { Camera, Check, Code2, Copy, Download, Eye, KeyRound, Loader2, Plus, PencilLine } from 'lucide-react';
 
 interface EmailAccount {
   email: string;
@@ -624,9 +624,28 @@ const EmailAccountsPage = () => {
             className="h-64 w-full resize-none rounded-md border border-white/20 bg-black/50 p-3 font-mono text-xs text-white/80 outline-none focus:border-white/40"
           />
           <p className="text-xs text-white/50">
-            Thunderbird: Account Settings → Signature text → enable “Use HTML” → paste. Apple Mail: Settings → Signatures → uncheck “Always match my default message font”.
+            Thunderbird: Account Settings → Signature text → enable “Use HTML” → paste. Or use “Attach the signature from a file instead” with the downloaded HTML. Apple Mail: Settings → Signatures → uncheck “Always match my default message font”.
           </p>
           <DialogFooter>
+            <Button
+              variant="outline"
+              className="border-white/20 text-white hover:bg-white/10"
+              disabled={!codeHtml}
+              onClick={() => {
+                const blob = new Blob([codeHtml], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `signature-${(codeEmail || 'saltmedia').replace(/[^a-z0-9._-]+/gi, '-')}.html`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              }}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download .html
+            </Button>
             <Button
               variant="outline"
               className="border-white/20 text-white hover:bg-white/10"
