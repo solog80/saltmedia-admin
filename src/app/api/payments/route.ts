@@ -1,21 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PAYMENTS_FUNCTION_URL =
-  'https://europe-west1-salt-media-app1.cloudfunctions.net/getPaymentMetrics';
+const MESH_API_URL =
+  (process.env.API_BASE_URL || 'https://edge.solofx.net/api/v1').replace(/\/$/, '');
+const SERVICE_KEY = process.env.MESH_SERVICE_KEY || process.env.SERVICE_ROLE_KEY || '';
 
 export async function GET(req: NextRequest) {
   try {
+    if (!SERVICE_KEY) {
+      return NextResponse.json(
+        { error: 'Payment metrics unavailable', message: 'SERVICE_ROLE_KEY is not configured' },
+        { status: 500 },
+      );
+    }
+
     const days = req.nextUrl.searchParams.get('days') || '30';
-    const url = `${PAYMENTS_FUNCTION_URL}?days=${days}`;
+    const url = `${MESH_API_URL}/getPaymentMetrics?days=${encodeURIComponent(days)}`;
 
     const response = await fetch(url, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+      },
       cache: 'no-store',
     });
 
     if (!response.ok) {
-      throw new Error(`Cloud Function returned ${response.status}`);
+      const body = await response.text();
+      throw new Error(`Mesh returned ${response.status}: ${body}`);
     }
 
     const metrics = await response.json();
