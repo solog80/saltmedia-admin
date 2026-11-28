@@ -13,7 +13,7 @@ type SrtLink = {
 
 export default function SrtLinksPage() {
   const [items, setItems] = useState<SrtLink[]>([]);
-  const [max, setMax] = useState(10);
+  const [max, setMax] = useState(20);
   const [name, setName] = useState('');
   const [path, setPath] = useState('presenter1');
   const [passphrase, setPassphrase] = useState('');
@@ -29,7 +29,7 @@ export default function SrtLinksPage() {
       return;
     }
     setItems(data.items || []);
-    setMax(data.max || 10);
+    setMax(data.max || 20);
     setError('');
   }, []);
 

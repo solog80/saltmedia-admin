@@ -5,7 +5,7 @@ import { addMediaMtxPath, deleteMediaMtxPath, getMediaMtxPath } from '@/lib/medi
 export const dynamic = 'force-dynamic';
 
 const COLLECTION = 'srt_links';
-const MAX_LINKS = 10;
+const MAX_LINKS = 20;
 const SRT_HOST = process.env.SRT_LINK_HOST || '139.144.77.47';
 const SRT_PORT = process.env.SRT_LINK_PORT || '7105';
 
